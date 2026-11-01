@@ -20,6 +20,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.openwhen.app.R
 import com.openwhen.app.BuildConfig
 import com.openwhen.app.notification.LetterNotificationSettingsCard
+import com.openwhen.app.update.AppUpdateHost
+import com.openwhen.app.update.AppUpdateSettingsCard
+import com.openwhen.app.update.AppUpdateViewModel
 import com.openwhen.app.presentation.screens.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -27,6 +30,9 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun OpenWhenApp(viewModel: EnvelopeViewModel = hiltViewModel(), inboxRequest: Int = 0) {
+    val updateViewModel: AppUpdateViewModel = hiltViewModel()
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+    val updatesEnabled = BuildConfig.SPARK_MODE && !BuildConfig.DEBUG
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
     val create by viewModel.create.collectAsStateWithLifecycle()
     val opened by viewModel.opened.collectAsStateWithLifecycle()
@@ -160,9 +166,19 @@ fun OpenWhenApp(viewModel: EnvelopeViewModel = hiltViewModel(), inboxRequest: In
                     notificationSettings = if (BuildConfig.SPARK_MODE && dashboard.user != null) ({
                         LetterNotificationSettingsCard(uid = dashboard.user!!.uid)
                     }) else null,
+                    updateSettings = if (updatesEnabled) ({
+                        AppUpdateSettingsCard(updateState,
+                            onCheck = { updateViewModel.checkForUpdates(manual = true) },
+                            onShow = updateViewModel::showDialog)
+                    }) else null,
+                    onCheckForUpdates = if (updatesEnabled) ({ updateViewModel.checkForUpdates(manual = true) }) else null,
                 )
             }
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).imePadding().navigationBarsPadding())
         }
     }
+    if (updatesEnabled) AppUpdateHost(
+        updateViewModel, updateState,
+        allowPrompt = !showingLetter && route == "home" && !pairing.isBusy && !googleBusy,
+    )
 }

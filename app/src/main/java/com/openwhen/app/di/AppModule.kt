@@ -10,6 +10,8 @@ import com.openwhen.app.data.FirebaseEnvelopeRepository
 import com.openwhen.app.data.FirebaseStoreProvider
 import com.openwhen.app.data.SparkEnvelopeRepository
 import com.openwhen.app.domain.repository.EnvelopeRepository
+import com.openwhen.app.update.GitHubUpdateRepository
+import com.openwhen.app.update.UpdateRepository
 import dagger.Lazy
 import dagger.Module
 import dagger.Provides
@@ -20,6 +22,7 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+    @Provides @Singleton fun updates(repository: GitHubUpdateRepository): UpdateRepository = repository
     @Provides @Singleton fun auth(): FirebaseAuth = FirebaseAuth.getInstance()
     @Provides @Singleton fun firestore(): FirebaseFirestore = FirebaseStoreProvider.get()
     @Provides @Singleton fun storage(): FirebaseStorage = FirebaseStorage.getInstance()

@@ -41,6 +41,8 @@ fun EnvelopeDashboardScreen(
     alert: String? = null,
     onAlertDismiss: () -> Unit = {},
     notificationSettings: (@Composable () -> Unit)? = null,
+    updateSettings: (@Composable () -> Unit)? = null,
+    onCheckForUpdates: (() -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     val latest = state.envelopes.filter { it.senderId == state.user?.uid && it.isOpened }
@@ -70,6 +72,10 @@ fun EnvelopeDashboardScreen(
                             Icon(Icons.Rounded.MoreHoriz, words("Our space options", "خيارات مساحتنا"))
                         }
                         DropdownMenu(menu, { menu = false }) {
+                            if (onCheckForUpdates != null) DropdownMenuItem(
+                                text = { Text(words("App updates", "تحديثات التطبيق")) },
+                                onClick = { menu = false; onCheckForUpdates() },
+                            )
                             DropdownMenuItem(text = { Text(words("Our invitation", "دعوتنا")) }, onClick = { menu = false; onPairing() })
                             DropdownMenuItem(text = { Text(words("Sign out", "تسجيل الخروج")) }, onClick = { menu = false; onSignOut() })
                         }
@@ -185,6 +191,7 @@ fun EnvelopeDashboardScreen(
             items(state.visibleEnvelopes, key = { it.envelopeId }) { envelope ->
                 WaxSealEnvelopeCard(envelope, envelope.senderId == state.user?.uid, onOpen = { onOpen(envelope) })
             }
+            if (updateSettings != null) item(span = { GridItemSpan(maxLineSpan) }) { updateSettings() }
         }
     }
 }

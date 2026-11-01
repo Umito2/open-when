@@ -6,13 +6,13 @@ A native Android home for the things you want your person to hear, exactly when 
 
 | Flavor | Backend | Features |
 | --- | --- | --- |
-| `spark` | Firebase Authentication + Firestore on the free Spark plan | Two-device pairing, text letters, song links, date locks, reactions, foreground activity and optional delayed phone alerts |
+| `spark` | Firebase Authentication + Firestore on the free Spark plan | Two-device pairing, text letters, song links, date locks, reactions, delayed phone alerts and in-app APK updates |
 | `live` | Authentication + Firestore + Cloud Functions + Cloud Storage on Blaze | Full multimedia letters, server-managed receipts and one-time opening |
 | `demo` | Private local storage | Six sample letters and local media features; no synchronization between devices |
 
 The connected Spark edition targets the dedicated Firebase project **`open-when-umito2`**. Billing has not been enabled. It does not upload photos or voice notes, offer one-time envelopes, or use Cloud Functions. Its account options are Anonymous and Email/Password; Google sign-in stays hidden until configured.
 
-Download **[OpenWhen-1.2.0.apk](https://github.com/Umito2/open-when/releases/download/v1.2.0/OpenWhen-1.2.0.apk)** from the **[v1.2.0 release](https://github.com/Umito2/open-when/releases/tag/v1.2.0)** for the connected Spark edition with delayed letter notifications. It updates v1.1.0 using the same application ID and signing key, preserving your account and shared letters. The earlier [v1.0.0-demo release](https://github.com/Umito2/open-when/releases/tag/v1.0.0-demo) is the offline demo and cannot connect two phones. Both editions can be installed side by side; local demo letters are not migrated to the cloud.
+Download **[OpenWhen-1.3.0.apk](https://github.com/Umito2/open-when/releases/download/v1.3.0/OpenWhen-1.3.0.apk)** from the **[v1.3.0 release](https://github.com/Umito2/open-when/releases/tag/v1.3.0)** for the connected Spark edition with delayed letter notifications and in-app updates. Install it over v1.1.0 or v1.2.0 using the same application ID and signing key, preserving your account and shared letters. The earlier [v1.0.0-demo release](https://github.com/Umito2/open-when/releases/tag/v1.0.0-demo) is the offline demo and cannot connect two phones. Both editions can be installed side by side; local demo letters are not migrated to the cloud.
 
 ## Run the app
 
@@ -65,6 +65,16 @@ To build Spark locally, register Android apps for `com.openwhen.app` (release) a
 ```
 
 An installable release requires a configured private signing key. Gradle reads the ignored root `signing.properties` file with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. This workspace's persistent key is `.tools/signing/open-when-release.jks`; back up that file and `signing.properties` privately so subsequent APKs can update the installed app. Spark and full `live` use the same application ID; switching editions does not migrate cloud data automatically. Firebase configuration and signing material are excluded from Git.
+
+## Update from inside the app
+
+Install **v1.3.0 once from Releases** to add the updater; earlier installed versions cannot acquire this feature automatically. Keep the existing app installed when updating so its account and pairing remain available.
+
+The signed Spark edition checks for a newer stable release when it opens, with a 15-minute interval between checks in the same process. When an update is available, choose **Download update**, wait for the progress bar, then choose **Install update**. Android may ask you to allow **Open When** to install apps from this source. Return to the app and confirm Android's installation prompt. You can decline or cancel, and retry through **App updates** in the home screen menu or the card below your letters. Checking failures do not interrupt your letters. No GitHub account or new cloud service is required.
+
+The updater downloads into private app cache and verifies the release checksum, package ID, higher Android version code, supported Android version, and matching signing certificate before opening the installer. Android still performs installation and requires user confirmation. Only the signed Spark release has the install permission and private FileProvider; debug, demo and full `live` builds do not offer this updater. Canceled or interrupted downloads can be restarted; verified downloads can be reused while retained in cache.
+
+For future releases, publish a stable tag **vX.Y.Z** with the fully uploaded asset **OpenWhen-X.Y.Z.apk**, mark it as latest, increment the Android `versionCode`, and keep the existing signing key. GitHub must provide the asset's SHA-256 `digest`. The app ignores prereleases, demo assets and older/equal versions. Release metadata comes from the public [GitHub Releases API](https://docs.github.com/en/rest/releases/releases); install permission follows [Android's APK distribution flow](https://developer.android.com/studio/publish).
 
 ## Full multimedia backend on Blaze
 
@@ -128,6 +138,8 @@ Local build outputs: `app/build/outputs/apk/demo/debug/app-demo-debug.apk`, `app
 Spark's **16 security tests** pass. A test against the actual `open-when-umito2` cloud service passed anonymous sign-in, two-account pairing, text delivery, server date locks, outsider isolation, receipt retries and real-time receipt/reaction listeners. A separate email registration/sign-in test restored the same account. All four temporary Auth accounts and ten Firestore documents were removed after testing.
 
 Version 1.2.0 passed signed Spark release assembly, demo assembly, all **14 JVM tests in each variant** and lint with **zero errors**. Seven notification-policy tests cover historical baselines, empty inboxes, timestamp precision, cursor ties, duplicate pages, opened-letter filtering and account/permission checks. The live cloud smoke test also passed the deployed notification indexes and cursor queries; its disposable accounts/documents were removed. No physical Android device was connected for notification delivery, permission or tap testing.
+
+Version 1.3.0 adds **16 updater tests** for version ordering, release and URL validation, checksums, download bounds, quiet offline checks, dismissal, cancellation, explicit installation, failed verification, permission retry and saved-state restoration. This brings the JVM suite to **30 tests per variant**. APK installation, the Android settings round trip and preservation of installed app data still require a real-device test; no physical phone was available in this workspace.
 
 GitHub Actions compiles Spark with an explicitly inert Firebase fixture and runs its JVM tests, lint and security suite. That CI configuration does not access the deployed service. Download the configured, signed Spark APK from Releases; the `open-when-demo` Actions artifact is the offline edition.
 
