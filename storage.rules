@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /couple_media/{spaceId}/{uid}/{fileId} {
+      function owner() {
+        return request.auth != null && request.auth.uid == uid
+          && firestore.get(/databases/(default)/documents/users/$(uid)).data.coupleSpaceId == spaceId;
+      }
+      allow get: if owner();
+      allow list: if false;
+      allow create: if resource == null && owner() && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType.matches('(image/.*|audio/mp4|audio/aac|audio/x-m4a)');
+      allow update, delete: if false;
+    }
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

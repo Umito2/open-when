@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function member(spaceId) {
+      let space = get(/databases/$(database)/documents/couple_spaces/$(spaceId)).data;
+      return signedIn() && (space.user1Id == request.auth.uid || space.user2Id == request.auth.uid);
+    }
+    function ownUser(uid) { return signedIn() && request.auth.uid == uid; }
+    match /users/{uid} {
+      allow get: if ownUser(uid) || (signedIn() && resource.data.partnerId == request.auth.uid);
+      allow list: if false;
+      allow create: if ownUser(uid)
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'partnerId', 'coupleSpaceId', 'fcmToken', 'currentMood'])
+        && request.resource.data.uid == uid
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.partnerId == null && request.resource.data.coupleSpaceId == null
+        && request.resource.data.currentMood is string && request.resource.data.currentMood.size() <= 60
+        && (request.resource.data.fcmToken == null || request.resource.data.fcmToken is string);
+      allow update: if ownUser(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'currentMood', 'fcmToken'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.currentMood is string && request.resource.data.currentMood.size() <= 60
+        && (request.resource.data.fcmToken == null || (request.resource.data.fcmToken is string && request.resource.data.fcmToken.size() <= 4096));
+      allow delete: if false;
+    }
+    match /couple_spaces/{spaceId} {
+      allow get: if member(spaceId);
+      allow list, write: if false;
+      match /envelopes/{envelopeId} {
+        allow read: if member(spaceId);
+        allow write: if false;
+        match /content/{contentId} {
+          // Recipients receive sealed content only from the authorized callable.
+          allow read: if member(spaceId) && get(/databases/$(database)/documents/couple_spaces/$(spaceId)/envelopes/$(envelopeId)).data.senderId == request.auth.uid;
+          allow write: if false;
+        }
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

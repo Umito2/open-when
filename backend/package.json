@@ -1,0 +1,26 @@
+{
+  "name": "open-when-functions",
+  "private": true,
+  "version": "1.0.0",
+  "main": "lib/index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test lib/policy.test.js lib/downloadToken.test.js",
+    "test:rules": "firebase emulators:exec --only firestore,storage \"node --test test/rules.test.cjs\" --project demo-open-when",
+    "test:integration": "npm run build && firebase emulators:exec --only functions,firestore,auth,storage \"node --test test/integration.test.cjs\" --project demo-open-when",
+    "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
+    "deploy": "npm run build && firebase deploy --only functions,firestore:rules,storage"
+  },
+  "dependencies": {
+    "firebase-admin": "13.4.0",
+    "firebase-functions": "6.4.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "4.0.1",
+    "@types/node": "22.15.30",
+    "firebase": "11.9.1",
+    "firebase-tools": "14.7.0",
+    "typescript": "5.8.3"
+  }
+}

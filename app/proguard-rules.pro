@@ -1,0 +1,3 @@
+-keepattributes Signature,InnerClasses,EnclosingMethod
+-keep class com.openwhen.app.domain.model.** { *; }
+-keepclassmembers class * { @com.google.gson.annotations.SerializedName <fields>; }

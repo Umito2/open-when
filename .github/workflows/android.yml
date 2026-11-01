@@ -1,0 +1,44 @@
+name: Android and Firebase checks
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - run: sh ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug :app:assembleDemoDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-when-demo
+          path: app/build/outputs/apk/demo/debug/*.apk
+  firebase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+        working-directory: backend
+      - run: npm test
+        working-directory: backend
+      - run: npm run test:rules
+        working-directory: backend
+      - run: npm run test:integration
+        working-directory: backend

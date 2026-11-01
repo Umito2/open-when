@@ -1,0 +1,6 @@
+<resources>
+    <string name="loading_letters">بنجمّع رسايل الحب الصغيرة…</string>
+    <string name="google_unavailable">تسجيل Google متاح في التطبيق المتصل. ممكن تستكشفي النسخة التجريبية دلوقتي.</string>
+    <string name="google_configuration">فعّلي تسجيل Google في Firebase وحمّلي ملف الإعدادات المحدّث أولًا.</string>
+    <string name="google_no_account">لا يوجد حساب Google متاح. أضف حساباً إلى هاتفك أو استخدم البريد الإلكتروني.</string>
+</resources>
