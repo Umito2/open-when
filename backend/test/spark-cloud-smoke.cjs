@@ -9,6 +9,7 @@ const { getAuth, signInAnonymously, deleteUser } = require('firebase/auth');
 const {
   getFirestore, doc, setDoc, getDoc, updateDoc, runTransaction, serverTimestamp,
   Timestamp, increment, onSnapshot, terminate, setLogLevel,
+  collection, query, where, orderBy, documentId, startAfter, getDocs,
 } = require('firebase/firestore');
 
 const projectIndex = process.argv.indexOf('--project');
@@ -165,10 +166,24 @@ async function main() {
     catch (error) { if (error.code !== 'permission-denied') throw error; return operation(); }
   }
   phase = 'sending and idempotent retry';
+  const received = collection(noor.db, `couple_spaces/${spaceId}/envelopes`);
+  const newestQuery = () => query(received, where('receiverId', '==', noor.uid),
+    orderBy('createdAt', 'desc'), orderBy(documentId(), 'desc'));
+  assert.equal((await getDocs(newestQuery())).size, 0, 'A new inbox has an empty notification baseline.');
   await sendLetter('anytime');
   await sendLetter('anytime');
   await sendLetter('future', Date.now() + 86400000);
   await sendLetter('past', Date.now() - 86400000);
+  phase = 'deployed notification indexes and receipt cursor';
+  const initialInbox = await getDocs(query(received, where('receiverId', '==', noor.uid),
+    orderBy('createdAt', 'asc'), orderBy(documentId(), 'asc')));
+  assert.equal(initialInbox.size, 3);
+  assert.ok(initialInbox.docs.every(snapshot => snapshot.data().letterText === undefined), 'Notification checks never fetch letter contents.');
+  const baseline = (await getDocs(newestQuery())).docs[0];
+  await sendLetter('new-arrival');
+  const newer = await getDocs(query(received, where('receiverId', '==', noor.uid),
+    orderBy('createdAt', 'asc'), orderBy(documentId(), 'asc'), startAfter(baseline.get('createdAt'), baseline.id)));
+  assert.deepEqual(newer.docs.map(snapshot => snapshot.id), ['new-arrival']);
   phase = 'date locks and outsider isolation';
   await denied(getDoc(doc(noor.db, `${pathFor('future')}/content/letter`)));
   await denied(getDoc(doc(stranger.db, `${pathFor('anytime')}/content/letter`)));
@@ -189,7 +204,7 @@ async function main() {
   await reaction;
   manifest.passed = true;
   saveManifest();
-  console.log('PASS: cloud anonymous sign-in, pairing, text sync, date locks, receipt retry, real-time alerts/reactions, outsider denial.');
+  console.log('PASS: cloud sign-in, pairing, text sync, date locks, receipt retry, real-time updates, private access, notification indexes/cursors.');
 }
 
 (async () => {

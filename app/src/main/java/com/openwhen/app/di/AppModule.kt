@@ -2,13 +2,12 @@ package com.openwhen.app.di
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreSettings
-import com.google.firebase.firestore.MemoryCacheSettings
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import com.openwhen.app.BuildConfig
 import com.openwhen.app.data.DemoEnvelopeRepository
 import com.openwhen.app.data.FirebaseEnvelopeRepository
+import com.openwhen.app.data.FirebaseStoreProvider
 import com.openwhen.app.data.SparkEnvelopeRepository
 import com.openwhen.app.domain.repository.EnvelopeRepository
 import dagger.Lazy
@@ -22,14 +21,7 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object AppModule {
     @Provides @Singleton fun auth(): FirebaseAuth = FirebaseAuth.getInstance()
-    @Provides @Singleton fun firestore(): FirebaseFirestore = FirebaseFirestore.getInstance().also {
-        if (BuildConfig.SPARK_MODE) {
-            // Opened letters stay in memory rather than a persistent on-device database.
-            it.firestoreSettings = FirebaseFirestoreSettings.Builder()
-                .setLocalCacheSettings(MemoryCacheSettings.newBuilder().build())
-                .build()
-        }
-    }
+    @Provides @Singleton fun firestore(): FirebaseFirestore = FirebaseStoreProvider.get()
     @Provides @Singleton fun storage(): FirebaseStorage = FirebaseStorage.getInstance()
     @Provides @Singleton fun functions(): FirebaseFunctions = FirebaseFunctions.getInstance("us-central1")
 

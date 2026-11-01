@@ -6,13 +6,13 @@ A native Android home for the things you want your person to hear, exactly when 
 
 | Flavor | Backend | Features |
 | --- | --- | --- |
-| `spark` | Firebase Authentication + Firestore on the free Spark plan | Two-device pairing, text letters, song links, date locks, reactions and foreground partner activity |
+| `spark` | Firebase Authentication + Firestore on the free Spark plan | Two-device pairing, text letters, song links, date locks, reactions, foreground activity and optional delayed phone alerts |
 | `live` | Authentication + Firestore + Cloud Functions + Cloud Storage on Blaze | Full multimedia letters, server-managed receipts and one-time opening |
 | `demo` | Private local storage | Six sample letters and local media features; no synchronization between devices |
 
 The connected Spark edition targets the dedicated Firebase project **`open-when-umito2`**. Billing has not been enabled. It does not upload photos or voice notes, offer one-time envelopes, or use Cloud Functions. Its account options are Anonymous and Email/Password; Google sign-in stays hidden until configured.
 
-Download **[OpenWhen-1.1.0.apk](https://github.com/Umito2/open-when/releases/download/v1.1.0/OpenWhen-1.1.0.apk)** from the **[v1.1.0 release](https://github.com/Umito2/open-when/releases/tag/v1.1.0)** for the connected Spark edition. The earlier [v1.0.0-demo release](https://github.com/Umito2/open-when/releases/tag/v1.0.0-demo) is the offline demo and cannot connect two phones. Both editions can be installed side by side; local demo letters are not migrated to the cloud.
+Download **[OpenWhen-1.2.0.apk](https://github.com/Umito2/open-when/releases/download/v1.2.0/OpenWhen-1.2.0.apk)** from the **[v1.2.0 release](https://github.com/Umito2/open-when/releases/tag/v1.2.0)** for the connected Spark edition with delayed letter notifications. It updates v1.1.0 using the same application ID and signing key, preserving your account and shared letters. The earlier [v1.0.0-demo release](https://github.com/Umito2/open-when/releases/tag/v1.0.0-demo) is the offline demo and cannot connect two phones. Both editions can be installed side by side; local demo letters are not migrated to the cloud.
 
 ## Run the app
 
@@ -50,6 +50,12 @@ The demo starts in Noor and Adam's paired space with six complete English/Arabic
 3. On the second phone, join using that code. You can now exchange text letters, song links and reactions while connected.
 
 Anonymous accounts are tied to the installation. Use Email/Password to keep access after moving to another phone or reinstalling. Signing out does not delete the shared space.
+
+### Enable phone notifications
+
+On the receiving phone, turn on **Letter notifications** on the home screen and allow Android's notification permission. Setup needs an internet connection to mark the existing inbox as history. New, unopened letters received afterward can show a private **A little love is waiting** phone notification. Tapping it returns to **For me** without breaking any seals or opening locked content.
+
+This free option uses Android WorkManager to check for new letters on a **15-minute interval**. Delivery can take longer because Android controls background scheduling, connectivity and battery limits; these are delayed checks, not instant push notifications. Force-stopping the app stops checks until it is opened again. Existing letters and already-opened letters do not trigger alerts. Preferences are per account and per phone, and signing out cancels that account's background checks and visible alerts. See [Android's periodic-work timing](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work#schedule_periodic_work).
 
 To build Spark locally, register Android apps for `com.openwhen.app` (release) and `com.openwhen.app.debug` (debug), save the matching Firebase configuration to **app/src/spark/google-services.json**, and follow the separate Spark deployment instructions in [backend setup](backend/README.md).
 
@@ -95,7 +101,7 @@ Firestore cannot restrict individual fields within a readable document. The enve
 
 **Full `live`:** callable transactions pair users, create envelopes, increment receipts and save reactions. Recipients receive private content through an authorized callable after server unlock checks. Invitations use a private, rate-limited index. Upload rules restrict objects to their owner's shared space and enforce type/size limits. See [Firestore rules](firestore.rules), [Storage rules](storage.rules) and [server implementation](backend/src/index.ts).
 
-The sender's Firestore listener shows activity while their app is running. **Background FCM push delivery is not implemented in either edition**; `fcmToken` is modeled only. Received content can be copied. Full `live` download URLs become bearer links after opening, and one-time access does not prevent recipients keeping copies.
+The sender's Firestore listener shows activity while their app is running. Spark additionally supports opt-in delayed local notifications for newly received letters, using metadata queries and Android's scheduler. **FCM push delivery is not used**; no extra hosting account, Cloud Functions or billing is required for these delayed alerts. `fcmToken` remains unused. Received content can be copied. Full `live` download URLs become bearer links after opening, and one-time access does not prevent recipients keeping copies.
 
 ## Validation
 
@@ -121,7 +127,7 @@ Local build outputs: `app/build/outputs/apk/demo/debug/app-demo-debug.apk`, `app
 
 Spark's **16 security tests** pass. A test against the actual `open-when-umito2` cloud service passed anonymous sign-in, two-account pairing, text delivery, server date locks, outsider isolation, receipt retries and real-time receipt/reaction listeners. A separate email registration/sign-in test restored the same account. All four temporary Auth accounts and ten Firestore documents were removed after testing.
 
-The signed Spark release APK assembled and passed APK signature verification with its registered release certificate. Both Spark and demo passed all seven JVM tests each and lint with zero errors (12 Spark warnings, 22 demo warnings). The release is `com.openwhen.app`, version 1.1.0/code 2, minimum API 26 and target API 36. No physical Android device was connected for installation testing.
+Version 1.2.0 passed signed Spark release assembly, demo assembly, all **14 JVM tests in each variant** and lint with **zero errors**. Seven notification-policy tests cover historical baselines, empty inboxes, timestamp precision, cursor ties, duplicate pages, opened-letter filtering and account/permission checks. The live cloud smoke test also passed the deployed notification indexes and cursor queries; its disposable accounts/documents were removed. No physical Android device was connected for notification delivery, permission or tap testing.
 
 GitHub Actions compiles Spark with an explicitly inert Firebase fixture and runs its JVM tests, lint and security suite. That CI configuration does not access the deployed service. Download the configured, signed Spark APK from Releases; the `open-when-demo` Actions artifact is the offline edition.
 

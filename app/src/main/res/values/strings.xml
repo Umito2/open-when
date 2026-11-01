@@ -3,4 +3,15 @@
     <string name="google_unavailable">Google sign-in is available in the connected app. You can explore the demo right away.</string>
     <string name="google_configuration">Enable Google authentication in Firebase, then download the updated configuration file.</string>
     <string name="google_no_account">No Google account is available. Add an account to your phone or choose email sign-in.</string>
+    <string name="letter_alert_channel">New love letters</string>
+    <string name="letter_alert_channel_description">Private reminders when your partner leaves a new sealed letter.</string>
+    <string name="letter_alert_title">A little love is waiting 💌</string>
+    <string name="letter_alert_body">Your partner left you a sealed letter. Open your inbox when you’re ready.</string>
+    <string name="letter_alert_settings_title">New letter phone alerts</string>
+    <string name="letter_alert_enabled">On for this account on this phone</string>
+    <string name="letter_alert_disabled">Off on this phone</string>
+    <string name="letter_alert_frequency">Checks about every 15 minutes with internet. Android may delay alerts. Letters stay sealed until you open them.</string>
+    <string name="letter_alert_blocked">Allow notifications in your phone settings to receive alerts.</string>
+    <string name="letter_alert_open_settings">Notification settings</string>
+    <string name="letter_alert_connection_error">Connect to the internet and try turning alerts on again.</string>
 </resources>

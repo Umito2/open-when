@@ -40,6 +40,7 @@ fun EnvelopeDashboardScreen(
     onSignOut: () -> Unit,
     alert: String? = null,
     onAlertDismiss: () -> Unit = {},
+    notificationSettings: (@Composable () -> Unit)? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
     val latest = state.envelopes.filter { it.senderId == state.user?.uid && it.isOpened }
@@ -117,6 +118,9 @@ fun EnvelopeDashboardScreen(
                         }
                     }
                 }
+            }
+            if (notificationSettings != null) item(span = { GridItemSpan(maxLineSpan) }) {
+                notificationSettings()
             }
             if (state.isDemo) item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(words("DEMO SPACE · letters to explore, feelings to keep", "مساحة تجريبية · رسائل لتكتشفها ومشاعر لتحتفظ بها"),

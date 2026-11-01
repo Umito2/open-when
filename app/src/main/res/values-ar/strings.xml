@@ -3,4 +3,15 @@
     <string name="google_unavailable">تسجيل Google متاح في التطبيق المتصل. ممكن تستكشفي النسخة التجريبية دلوقتي.</string>
     <string name="google_configuration">فعّلي تسجيل Google في Firebase وحمّلي ملف الإعدادات المحدّث أولًا.</string>
     <string name="google_no_account">لا يوجد حساب Google متاح. أضف حساباً إلى هاتفك أو استخدم البريد الإلكتروني.</string>
+    <string name="letter_alert_channel">رسائل حب جديدة</string>
+    <string name="letter_alert_channel_description">تنبيه خاص عندما يترك شريكك رسالة جديدة مختومة.</string>
+    <string name="letter_alert_title">قليل من الحب في انتظارك 💌</string>
+    <string name="letter_alert_body">ترك لك شريكك رسالة مختومة. افتح صندوق رسائلك عندما تكون مستعداً.</string>
+    <string name="letter_alert_settings_title">تنبيهات الرسائل على الهاتف</string>
+    <string name="letter_alert_enabled">مفعّلة لهذا الحساب على هذا الهاتف</string>
+    <string name="letter_alert_disabled">متوقفة على هذا الهاتف</string>
+    <string name="letter_alert_frequency">يتحقق التطبيق كل ١٥ دقيقة تقريباً عند الاتصال بالإنترنت. قد يؤخّر Android التنبيهات. تظل الرسائل مختومة حتى تفتحها.</string>
+    <string name="letter_alert_blocked">اسمح بالإشعارات في إعدادات هاتفك لاستقبال التنبيهات.</string>
+    <string name="letter_alert_open_settings">إعدادات الإشعارات</string>
+    <string name="letter_alert_connection_error">اتصل بالإنترنت وحاول تفعيل التنبيهات مرة أخرى.</string>
 </resources>

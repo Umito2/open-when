@@ -18,13 +18,15 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.openwhen.app.R
+import com.openwhen.app.BuildConfig
+import com.openwhen.app.notification.LetterNotificationSettingsCard
 import com.openwhen.app.presentation.screens.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun OpenWhenApp(viewModel: EnvelopeViewModel = hiltViewModel()) {
+fun OpenWhenApp(viewModel: EnvelopeViewModel = hiltViewModel(), inboxRequest: Int = 0) {
     val dashboard by viewModel.dashboard.collectAsStateWithLifecycle()
     val create by viewModel.create.collectAsStateWithLifecycle()
     val opened by viewModel.opened.collectAsStateWithLifecycle()
@@ -65,6 +67,14 @@ fun OpenWhenApp(viewModel: EnvelopeViewModel = hiltViewModel()) {
     }
     LaunchedEffect(create.wasSent) {
         if (create.wasSent) route = "home"
+    }
+    LaunchedEffect(inboxRequest) {
+        if (inboxRequest > 0) {
+            viewModel.onAppBackgrounded()
+            viewModel.dismissLetter()
+            viewModel.selectTab(false)
+            route = "home"
+        }
     }
     BackHandler(enabled = showingLetter || route != "home") {
         if (showingLetter) {
@@ -147,6 +157,9 @@ fun OpenWhenApp(viewModel: EnvelopeViewModel = hiltViewModel()) {
                     onPairing = { route = "pair" }, onMood = viewModel::setMood,
                     onSignOut = viewModel::signOut,
                     alert = alert, onAlertDismiss = { alert = null },
+                    notificationSettings = if (BuildConfig.SPARK_MODE && dashboard.user != null) ({
+                        LetterNotificationSettingsCard(uid = dashboard.user!!.uid)
+                    }) else null,
                 )
             }
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).imePadding().navigationBarsPadding())

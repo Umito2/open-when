@@ -6,7 +6,7 @@ The dedicated Spark project is **`open-when-umito2`** (project number `828591288
 
 ## Free Spark edition
 
-Spark supports Anonymous/Email sign-in, six-digit pairing, text letters, HTTPS song links, date locks, reactions and foreground activity. Google sign-in is hidden until configured. This edition does not use Storage uploads, photo/voice attachments, Functions or `ONE_TIME_ONLY` envelopes.
+Spark supports Anonymous/Email sign-in, six-digit pairing, text letters, HTTPS song links, date locks, reactions, foreground activity and opt-in delayed phone notifications. Google sign-in is hidden until configured. This edition does not use Storage uploads, photo/voice attachments, Functions or `ONE_TIME_ONLY` envelopes.
 
 Register the Android application ID matching the build: `com.openwhen.app` for release or `com.openwhen.app.debug` for debug. Save its Firebase configuration to `app/src/spark/google-services.json`. Enable the corresponding Authentication providers and create the Firestore `(default)` database.
 
@@ -69,6 +69,8 @@ The full backend updates receipts inside the authorized opening callable rather 
 
 ## Retention and operations
 
-Both editions show Firestore-driven activity while the app is running. **Neither sends background FCM push messages**; `fcmToken` is modeled only. Letters are not end-to-end encrypted, and the free service is subject to Spark quotas.
+Both editions show Firestore-driven activity while the app is running. Spark also checks for new letters with Android WorkManager on a 15-minute periodic schedule, subject to longer OS/network delays. It requires local opt-in and Android notification permission; **it does not use FCM push, an external sender or paid cloud services**. `fcmToken` is modeled only. Letters are not end-to-end encrypted, and polling reads count toward the project's Spark quota.
+
+Notification queries use the two `envelopes` indexes in `firestore.indexes.json`: `receiverId ASC` plus `createdAt ASC` or `DESC`, with document ID as the matching direction's tie breaker. Wait until Firestore reports both indexes ready before enabling alerts. The phone records a server-fetched baseline when enabled, then stores timestamp seconds/nanoseconds and document ID locally per account/space. Workers request only metadata, never letter bodies, and skip opened letters. One bounded check reads at most three pages of 50 envelopes; additional pages resume through bounded retry or the next scheduled check. Work and displayed notifications are canceled on sign-out. No security-rule relaxation is needed.
 
 For full `live`, unattached uploads can remain if a user abandons the studio. Configure cleanup of old unreferenced objects before operating at scale; immutable Storage rules avoid users deleting attachments from sent letters. Complete account deletion, export, unpairing and retention flows before a public store launch. Signing out intentionally does not delete a couple's shared letters.
