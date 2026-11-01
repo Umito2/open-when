@@ -6,13 +6,13 @@ A native Android home for the things you want your person to hear, exactly when 
 
 | Flavor | Backend | Features |
 | --- | --- | --- |
-| `spark` | Firebase Authentication + Firestore on the free Spark plan | Two-device pairing, text letters, song links, date locks, reactions, delayed phone alerts and in-app APK updates |
+| `spark` | Firebase Authentication + Firestore on the free Spark plan | Two-device pairing, letters with one compressed photo, song links, date locks, reactions, delayed phone alerts and in-app APK updates |
 | `live` | Authentication + Firestore + Cloud Functions + Cloud Storage on Blaze | Full multimedia letters, server-managed receipts and one-time opening |
 | `demo` | Private local storage | Six sample letters and local media features; no synchronization between devices |
 
-The connected Spark edition targets the dedicated Firebase project **`open-when-umito2`**. Billing has not been enabled. It does not upload photos or voice notes, offer one-time envelopes, or use Cloud Functions. Its account options are Anonymous and Email/Password; Google sign-in stays hidden until configured.
+The connected Spark edition targets the dedicated Firebase project **`open-when-umito2`**. Billing has not been enabled. It supports one resized photo per letter using private Firestore content, without Cloud Storage or Cloud Functions. Voice uploads and one-time envelopes remain unavailable. Its account options are Anonymous and Email/Password; Google sign-in stays hidden until configured.
 
-Download **[OpenWhen-1.3.0.apk](https://github.com/Umito2/open-when/releases/download/v1.3.0/OpenWhen-1.3.0.apk)** from the **[v1.3.0 release](https://github.com/Umito2/open-when/releases/tag/v1.3.0)** for the connected Spark edition with delayed letter notifications and in-app updates. Install it over v1.1.0 or v1.2.0 using the same application ID and signing key, preserving your account and shared letters. The earlier [v1.0.0-demo release](https://github.com/Umito2/open-when/releases/tag/v1.0.0-demo) is the offline demo and cannot connect two phones. Both editions can be installed side by side; local demo letters are not migrated to the cloud.
+Download **[OpenWhen-1.4.0.apk](https://github.com/Umito2/open-when/releases/download/v1.4.0/OpenWhen-1.4.0.apk)** from the **[v1.4.0 release](https://github.com/Umito2/open-when/releases/tag/v1.4.0)** for photo letters on the free connected Spark edition. Version 1.3.0 users can choose **App updates** inside the app. Install over your existing connected app using the same application ID and signing key, preserving your account and shared letters. The earlier [v1.0.0-demo release](https://github.com/Umito2/open-when/releases/tag/v1.0.0-demo) is the offline demo and cannot connect two phones. Both editions can be installed side by side; local demo letters are not migrated to the cloud.
 
 ## Run the app
 
@@ -66,9 +66,15 @@ To build Spark locally, register Android apps for `com.openwhen.app` (release) a
 
 An installable release requires a configured private signing key. Gradle reads the ignored root `signing.properties` file with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. This workspace's persistent key is `.tools/signing/open-when-release.jks`; back up that file and `signing.properties` privately so subsequent APKs can update the installed app. Spark and full `live` use the same application ID; switching editions does not migrate cloud data automatically. Firebase configuration and signing material are excluded from Git.
 
+### Send a photo memory
+
+Update both phones to **v1.4.0 or later**. In the letter studio, write your letter, tap **Tuck in a photo memory**, choose a photo and optionally add a caption. You can remove or replace the attachment before sealing. The recipient sees the photo in a Polaroid frame when opening the letter. A date-locked photo follows the same unlock rule as its words.
+
+Spark sends one JPEG photo per letter, resized to at most **1024 pixels** on its longest edge and compressed to at most **240 KiB**. Original image metadata, including location tags, is not copied into the shared JPEG. The photo stays in the private letter document; it has no public download URL and is not included in dashboard or notification queries. Inline photos are not placed in Coil's disk or shared memory caches. This small-photo option uses the existing free Firestore quota; full-resolution files and voice uploads require a different storage setup. Older app versions can still read a photo letter's words but need the update to display its picture.
+
 ## Update from inside the app
 
-Install **v1.3.0 once from Releases** to add the updater; earlier installed versions cannot acquire this feature automatically. Keep the existing app installed when updating so its account and pairing remain available.
+Install **v1.3.0 or later once from Releases** to add the updater; earlier installed versions cannot acquire this feature automatically. Keep the existing app installed when updating so its account and pairing remain available.
 
 The signed Spark edition checks for a newer stable release when it opens, with a 15-minute interval between checks in the same process. When an update is available, choose **Download update**, wait for the progress bar, then choose **Install update**. Android may ask you to allow **Open When** to install apps from this source. Return to the app and confirm Android's installation prompt. You can decline or cancel, and retry through **App updates** in the home screen menu or the card below your letters. Checking failures do not interrupt your letters. No GitHub account or new cloud service is required.
 
@@ -96,8 +102,8 @@ Demo builds continue to work when a cloud configuration is present. Use the corr
 
 - **Dashboard:** days together, partner mood, most recent opening, inbox/sent tabs, live sender activity banners and a shared invitation view.
 - **Opening:** a 1.5-second continuous seal hold, progress, haptic feedback and an animated flap. Releasing early or backgrounding cancels the gesture. The hold duration is enforced even when system animation scale is zero. Screen readers receive an accessible opening action.
-- **Reveal:** selectable letter text on warm paper, optional song links and recipient reactions. Demo and full `live` also support a tilted Polaroid and voice playback. Backgrounding pauses audio. Sender previews leave receipt state unchanged.
-- **Studio:** preset/custom prompts, envelope colors, five seal styles, HTTPS song links and date/time locks. Demo and full `live` also provide the Android photo picker, microphone recording, photo captions and one-time opening. Voice notes stop at five minutes.
+- **Reveal:** selectable letter text on warm paper, a tilted Polaroid photo, optional song links and recipient reactions. Demo and full `live` also support voice playback. Backgrounding pauses audio. Sender previews leave receipt state unchanged.
+- **Studio:** preset/custom prompts, envelope colors, five seal styles, Android photo picker, photo captions, HTTPS song links and date/time locks. Demo and full `live` also provide microphone recording and one-time opening. Voice notes stop at five minutes.
 - **Reliability:** listeners are removed when scopes change; failures retry with backoff. Receipt banners ignore initial history. Sending uses a stable request ID and reuses successful uploads after uncertain responses. Changing accounts clears private UI state before the new profile loads.
 - **Languages:** the interface follows the device's English/Arabic locale, supports RTL, uses start/end positioning and mirrored navigation, and contains both English and Arabic demo letters. Pastel light and cozy dark palettes follow the system theme.
 
@@ -135,11 +141,11 @@ The earlier demo/full-backend baseline was verified locally on **1 November 2026
 
 Local build outputs: `app/build/outputs/apk/demo/debug/app-demo-debug.apk`, `app/build/reports/tests/testDemoDebugUnitTest/index.html` and `app/build/reports/lint-results-demoDebug.html`. These generated files are excluded from Git. Successful GitHub Actions builds also provide the downloadable `open-when-demo` APK artifact.
 
-Spark's **16 security tests** pass. A test against the actual `open-when-umito2` cloud service passed anonymous sign-in, two-account pairing, text delivery, server date locks, outsider isolation, receipt retries and real-time receipt/reaction listeners. A separate email registration/sign-in test restored the same account. All four temporary Auth accounts and ten Firestore documents were removed after testing.
+Spark's **21 security tests** pass, including photo field validation, privacy, date locks and immutable retries. A test against the actual `open-when-umito2` cloud service passed anonymous sign-in, two-account pairing, text/photo delivery, server date locks, outsider isolation, receipt retries and real-time receipt/reaction listeners. The photo run used three disposable Auth accounts and eighteen Firestore documents, all removed after testing. Billing remains disabled. A previous email registration/sign-in test restored the same account and also removed its temporary data.
 
 Version 1.2.0 passed signed Spark release assembly, demo assembly, all **14 JVM tests in each variant** and lint with **zero errors**. Seven notification-policy tests cover historical baselines, empty inboxes, timestamp precision, cursor ties, duplicate pages, opened-letter filtering and account/permission checks. The live cloud smoke test also passed the deployed notification indexes and cursor queries; its disposable accounts/documents were removed. No physical Android device was connected for notification delivery, permission or tap testing.
 
-Version 1.3.0 adds **16 updater tests** for version ordering, release and URL validation, checksums, download bounds, quiet offline checks, dismissal, cancellation, explicit installation, failed verification, permission retry and saved-state restoration. This brings the JVM suite to **30 tests per variant**. APK installation, the Android settings round trip and preservation of installed app data still require a real-device test; no physical phone was available in this workspace.
+Version 1.3.0 added **16 updater tests** for version ordering, release and URL validation, checksums, download bounds, quiet offline checks, dismissal, cancellation, explicit installation, failed verification, permission retry and saved-state restoration. Version 1.4.0 adds eight photo-policy tests and an account-switch test during photo preparation, bringing the JVM suite to **39 tests per variant**. APK installation, the photo picker, Android image compression/orientation and photo rendering still require real-device validation; no physical phone was available in this workspace.
 
 GitHub Actions compiles Spark with an explicitly inert Firebase fixture and runs its JVM tests, lint and security suite. That CI configuration does not access the deployed service. Download the configured, signed Spark APK from Releases; the `open-when-demo` Actions artifact is the offline edition.
 

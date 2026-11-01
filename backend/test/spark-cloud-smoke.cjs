@@ -9,8 +9,12 @@ const { getAuth, signInAnonymously, deleteUser } = require('firebase/auth');
 const {
   getFirestore, doc, setDoc, getDoc, updateDoc, runTransaction, serverTimestamp,
   Timestamp, increment, onSnapshot, terminate, setLogLevel,
-  collection, query, where, orderBy, documentId, startAfter, getDocs,
+  collection, query, where, orderBy, documentId, startAfter, getDocs, Bytes,
 } = require('firebase/firestore');
+
+// A generated 2 x 2 test JPEG, never a personal photo.
+const jpegBase64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD751bVr611W9ggvbiGGOZ0SOOVlVVDEAAA8ADtRRRWB9Sf/9k=';
+const photoFields = () => ({ photoBytes: Bytes.fromBase64String(jpegBase64), photoMimeType: 'image/jpeg', photoCaption: 'Disposable photo test' });
 
 const projectIndex = process.argv.indexOf('--project');
 if (projectIndex < 0 || !process.argv[projectIndex + 1]) {
@@ -131,14 +135,20 @@ async function main() {
   assert.equal((await getDoc(doc(adam.db, `_invites/${code}`))).exists(), false);
 
   const pathFor = id => `couple_spaces/${spaceId}/envelopes/${id}`;
-  async function sendLetter(id, unlockTimestamp = null) {
+  async function sendLetter(id, unlockTimestamp = null, attachment = {}) {
     const path = track(pathFor(id));
     const bodyPath = track(`${path}/content/letter`);
+    const body = { letterText: 'A disposable cloud test. رسالة اختبار.', songUrl: null, ...attachment };
     await runTransaction(adam.db, async tx => {
       await tx.get(doc(adam.db, `users/${adam.uid}`));
       const ref = doc(adam.db, path);
       if ((await tx.get(ref)).exists()) {
-        assert.equal((await tx.get(doc(adam.db, bodyPath))).data().letterText, 'A disposable cloud test. رسالة اختبار.');
+        const existing = (await tx.get(doc(adam.db, bodyPath))).data();
+        assert.equal(existing.letterText, body.letterText);
+        assert.equal(existing.songUrl ?? null, body.songUrl ?? null);
+        assert.equal(existing.photoBytes?.toBase64() ?? null, body.photoBytes?.toBase64() ?? null, 'A retry must preserve photo bytes.');
+        assert.equal(existing.photoMimeType ?? null, body.photoMimeType ?? null);
+        assert.equal(existing.photoCaption ?? null, body.photoCaption ?? null, 'A retry must preserve the caption.');
         return;
       }
       tx.set(ref, {
@@ -148,7 +158,7 @@ async function main() {
         isOpened: false, lastOpenedAt: null, openCount: 0, partnerReaction: null,
         createdAt: serverTimestamp(), lastOpenRequestId: null,
       });
-      tx.set(doc(adam.db, bodyPath), { letterText: 'A disposable cloud test. رسالة اختبار.', songUrl: null });
+      tx.set(doc(adam.db, bodyPath), body);
     });
   }
   async function openLetter(id, requestId = randomUUID()) {
@@ -202,9 +212,28 @@ async function main() {
   const reaction = awaitSnapshot(adam.db, pathFor('anytime'), data => data.partnerReaction === 'Sending a hug');
   await updateDoc(doc(noor.db, pathFor('anytime')), { partnerReaction: 'Sending a hug' });
   await reaction;
+  phase = 'private photo delivery and immutable retry';
+  await sendLetter('photo-anytime', null, photoFields());
+  await sendLetter('photo-anytime', null, photoFields());
+  await assert.rejects(sendLetter('photo-anytime', null, { ...photoFields(), photoCaption: 'Changed retry' }), /preserve the caption/);
+  await sendLetter('photo-future', Date.now() + 86400000, photoFields());
+  await sendLetter('photo-past', Date.now() - 86400000, photoFields());
+  const photoMetadata = await getDocs(newestQuery());
+  assert.ok(photoMetadata.docs.every(snapshot => ['letterText', 'photoBytes', 'photoMimeType', 'photoCaption']
+    .every(field => snapshot.data()[field] === undefined)), 'Dashboard and notification queries never expose photos.');
+  const senderPreview = (await getDoc(doc(adam.db, `${pathFor('photo-future')}/content/letter`))).data();
+  assert.equal(senderPreview.photoBytes.toBase64(), jpegBase64);
+  await denied(getDoc(doc(noor.db, `${pathFor('photo-future')}/content/letter`)));
+  await denied(getDoc(doc(stranger.db, `${pathFor('photo-anytime')}/content/letter`)));
+  const receivedPhoto = await openLetter('photo-anytime');
+  assert.equal(receivedPhoto.photoBytes.toBase64(), jpegBase64);
+  assert.equal(receivedPhoto.photoMimeType, 'image/jpeg');
+  assert.equal(receivedPhoto.photoCaption, 'Disposable photo test');
+  assert.equal((await openLetter('photo-past')).photoBytes.toBase64(), jpegBase64);
+  await denied(updateDoc(doc(adam.db, `${pathFor('photo-anytime')}/content/letter`), { photoCaption: 'Changed after sealing' }));
   manifest.passed = true;
   saveManifest();
-  console.log('PASS: cloud sign-in, pairing, text sync, date locks, receipt retry, real-time updates, private access, notification indexes/cursors.');
+  console.log('PASS: cloud sign-in, pairing, text/photo sync, date locks, receipt retry, real-time updates, private photo access, notification indexes/cursors.');
 }
 
 (async () => {

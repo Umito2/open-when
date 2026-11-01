@@ -144,10 +144,16 @@ service cloud.firestore {
             return /databases/$(database)/documents/couple_spaces/$(spaceId)/envelopes/$(envelopeId);
           }
           function validContent(data) {
-            return data.keys().hasAll(['letterText', 'songUrl']) && data.keys().hasOnly(['letterText', 'songUrl'])
+            return data.keys().hasAll(['letterText', 'songUrl'])
+              && data.keys().hasOnly(['letterText', 'songUrl', 'photoBytes', 'photoMimeType', 'photoCaption'])
               && data.letterText is string && data.letterText.size() > 0 && data.letterText.size() <= 20000
               && (data.songUrl == null || (data.songUrl is string && data.songUrl.size() <= 2048
-                && data.songUrl.matches('^https://[^ ]+$')));
+                && data.songUrl.matches('^https://[^ ]+$')))
+              && (!data.keys().hasAny(['photoBytes', 'photoMimeType', 'photoCaption'])
+                || (data.keys().hasAll(['photoBytes', 'photoMimeType', 'photoCaption'])
+                  && data.photoBytes is bytes && data.photoBytes.size() > 0 && data.photoBytes.size() <= 245760
+                  && data.photoMimeType == 'image/jpeg'
+                  && (data.photoCaption == null || (data.photoCaption is string && data.photoCaption.size() <= 240))));
           }
           allow get: if contentId == 'letter' && member(spaceId)
             && (!exists(envelopePath()) || get(envelopePath()).data.senderId == request.auth.uid

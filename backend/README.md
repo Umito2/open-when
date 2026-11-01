@@ -6,7 +6,11 @@ The dedicated Spark project is **`open-when-umito2`** (project number `828591288
 
 ## Free Spark edition
 
-Spark supports Anonymous/Email sign-in, six-digit pairing, text letters, HTTPS song links, date locks, reactions, foreground activity and opt-in delayed phone notifications. Google sign-in is hidden until configured. This edition does not use Storage uploads, photo/voice attachments, Functions or `ONE_TIME_ONLY` envelopes.
+Spark supports Anonymous/Email sign-in, six-digit pairing, letters with one compressed photo, HTTPS song links, date locks, reactions, foreground activity and opt-in delayed phone notifications. Google sign-in is hidden until configured. This edition does not use Cloud Storage, voice attachments, Functions or `ONE_TIME_ONLY` envelopes.
+
+Photos are optional Firestore bytes inside `couple_spaces/{spaceId}/envelopes/{id}/content/letter`, alongside the existing words and song link. The three photo fields must appear together: `photoBytes` (1–245760 bytes), `photoMimeType` (`image/jpeg`) and `photoCaption` (null or up to 240 characters). Old text-only payloads remain valid. Android resizes to at most 1024 pixels, recompresses JPEG without source EXIF metadata, validates image structure/dimensions, and submits photo and letter atomically. Rules enforce the byte bound, field group, membership, immutable create and server date lock; rules cannot decode the image. Binary photo fields are excluded from indexes. Photos have no public bearer URL, and metadata/notification queries never fetch them.
+
+This is a small-photo option within Spark quotas, not full-resolution media storage. A 240 KiB photo plus a 20,000-character letter stays below Firestore's [1 MiB document limit](https://firebase.google.com/docs/firestore/quotas). Deploy the updated rules and index exemption before distributing the photo-capable APK. Previous app versions keep working for text and receipts but do not display photo attachments.
 
 Register the Android application ID matching the build: `com.openwhen.app` for release or `com.openwhen.app.debug` for debug. Save its Firebase configuration to `app/src/spark/google-services.json`. Enable the corresponding Authentication providers and create the Firestore `(default)` database.
 
@@ -31,7 +35,7 @@ Receipts/reactions come from the authenticated recipient's app under rules. A re
 
 App Check is **not enforced** in the initial Spark setup. Firebase Authentication and Firestore rules remain mandatory. The full-backend emulator suite below does not validate Spark rules or the deployed Spark project; validate this edition separately before release.
 
-Run `npm --prefix backend run test:spark` for the 16 Spark rules tests. These cover client transactions, membership isolation, expired invitations, concurrent pairing/sending/opening, date locks and immutable content. They use the isolated `demo-open-when-spark` emulator project.
+Run `npm --prefix backend run test:spark` for the 21 Spark rules tests. These cover client transactions, membership isolation, expired invitations, concurrent pairing/sending/opening, date locks, immutable content, bounded photo fields and photo privacy. They use the isolated `demo-open-when-spark` emulator project.
 
 For an explicitly authorized live check, `node backend/test/spark-cloud-smoke.cjs --project open-when-umito2` reads the ignored Android configuration and creates disposable accounts/data. It deletes its Auth accounts and writes the exact Firestore cleanup targets under `.tools/spark-cloud-smoke`. An administrator must then remove only those recorded documents, checking invitation ownership before deleting an invitation candidate. This opt-in script is never run by CI. The deployed project's smoke test passed on 1 November 2026, and its temporary accounts/documents were removed.
 

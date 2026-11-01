@@ -36,6 +36,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import com.openwhen.app.media.SparkPhotoPolicy
 import com.openwhen.app.media.VoiceNotePlayer
 import com.openwhen.app.presentation.components.*
 import com.openwhen.app.presentation.state.OpenEnvelopeState
@@ -139,14 +142,33 @@ fun LetterRevealScreen(
 
 @Composable
 fun PolaroidPhoto(url: String, caption: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val inlinePhoto = url.startsWith("data:")
+    val photoBytes = remember(url) {
+        if (inlinePhoto) runCatching { SparkPhotoPolicy.decode(url) }.getOrNull() else null
+    }
+    val image = remember(context, url, photoBytes) {
+        ImageRequest.Builder(context).data(if (inlinePhoto) photoBytes else url).apply {
+            if (inlinePhoto) {
+                // A sealed photo belongs to this reveal, not the shared image cache after sign-out.
+                memoryCachePolicy(CachePolicy.DISABLED)
+                diskCachePolicy(CachePolicy.DISABLED)
+            }
+        }.build()
+    }
     Surface(modifier.rotate(-3f), color = Color(0xFFFFFEFA), shadowElevation = 8.dp, shape = RoundedCornerShape(2.dp)) {
         Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             var failed by remember(url) { mutableStateOf(false) }
-            if (failed) Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+            var loading by remember(url) { mutableStateOf(true) }
+            if (failed || (inlinePhoto && photoBytes == null)) Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
                 Text(words("A memory worth keeping ♡\nPhoto unavailable", "ذكرى تستحق أن تبقى ♡\nالصورة غير متاحة"), textAlign = TextAlign.Center,
                     color = Color(0xFF783D51), fontFamily = FontFamily.Serif)
-            } else AsyncImage(model = url, contentDescription = caption.ifBlank { words("A memory from your partner", "ذكرى من شريكك") },
-                contentScale = ContentScale.Crop, onError = { failed = true }, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+            } else Box(Modifier.fillMaxWidth().aspectRatio(1f), contentAlignment = Alignment.Center) {
+                AsyncImage(model = image, contentDescription = caption.ifBlank { words("A memory from your partner", "ذكرى من شريكك") },
+                    contentScale = ContentScale.Crop, onError = { failed = true; loading = false }, onSuccess = { loading = false },
+                    modifier = Modifier.fillMaxSize())
+                if (loading) CircularProgressIndicator(Modifier.size(26.dp), color = Color(0xFF783D51), strokeWidth = 2.dp)
+            }
             Spacer(Modifier.height(13.dp))
             Text(caption.ifBlank { "♡" }, fontFamily = FontFamily.Cursive, fontSize = 22.sp,
                 textAlign = TextAlign.Center, color = Color(0xFF59494A), modifier = Modifier.padding(bottom = 9.dp))

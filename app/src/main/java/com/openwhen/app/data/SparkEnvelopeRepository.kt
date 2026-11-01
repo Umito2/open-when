@@ -5,6 +5,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.firestore.Blob
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -21,9 +22,12 @@ import com.openwhen.app.domain.model.UnlockRule
 import com.openwhen.app.domain.model.UnconfirmedSendException
 import com.openwhen.app.domain.model.User
 import com.openwhen.app.domain.repository.EnvelopeRepository
+import com.openwhen.app.media.SparkPhotoCodec
+import com.openwhen.app.media.SparkPhotoPolicy
 import java.io.IOException
 import java.security.SecureRandom
 import java.util.Date
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -41,11 +45,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Text letters backed by Firebase Authentication and Firestore's no-cost Spark plan. */
+/** Letters and bounded photo memories stored privately on Firebase's no-cost Spark plan. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SparkEnvelopeRepository @Inject constructor(
     private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
+    private val photoCodec: SparkPhotoCodec,
 ) : EnvelopeRepository {
     override val isDemo = false
     private val random = SecureRandom()
@@ -189,14 +194,19 @@ class SparkEnvelopeRepository @Inject constructor(
 
     override suspend fun sendEnvelope(draft: EnvelopeDraft): String {
         validateDraft(draft, requireFutureDate = false)
-        require(draft.unlockRule != UnlockRule.ONE_TIME_ONLY) { "Choose anytime or a special date for this text letter." }
-        require(draft.photoUrl == null && draft.voiceNoteUrl == null) { "This edition sends text letters and song links." }
+        require(draft.unlockRule != UnlockRule.ONE_TIME_ONLY) { "Choose anytime or a special date for this letter." }
+        require(draft.voiceNoteUrl == null && draft.voiceDurationSec == 0) { "Voice uploads are unavailable in this edition." }
+        require((draft.photoCaption?.length ?: 0) <= 240) { "Keep your photo caption under 240 characters." }
+        val photo = draft.photoUrl?.let { Blob.fromBytes(SparkPhotoPolicy.decode(it)) }
+        val photoCaption = draft.photoCaption?.trim()?.takeIf { photo != null && it.isNotEmpty() }
+        val photoMimeType = SparkPhotoPolicy.MIME_TYPE.takeIf { photo != null }
         val uid = currentUid()
         val envelopeId = "${uid}_${draft.clientRequestId}"
         var canReconcileSend = true
         while (true) {
             try {
                 firestore.runTransaction { transaction ->
+                    check(auth.currentUser?.uid == uid) { "Your account changed. Please start this letter again." }
                     val user = transaction.get(userReference(uid)).toObject(User::class.java)
                         ?: error("Sign in first.")
                     val spaceId = checkNotNull(user.coupleSpaceId) { "Connect with your partner first." }
@@ -213,7 +223,10 @@ class SparkEnvelopeRepository @Inject constructor(
                             existing.getString("unlockRule") == draft.unlockRule.name &&
                             existing.getLong("unlockTimestamp") == draft.unlockTimestamp.takeIf { draft.unlockRule == UnlockRule.DATE_LOCKED } &&
                             existingContent.getString("letterText") == draft.letterText.trim() &&
-                            existingContent.getString("songUrl") == draft.songUrl?.takeIf { it.isNotBlank() }) {
+                            existingContent.getString("songUrl") == draft.songUrl?.takeIf { it.isNotBlank() } &&
+                            existingContent.getBlob("photoBytes") == photo &&
+                            existingContent.getString("photoMimeType") == photoMimeType &&
+                            existingContent.getString("photoCaption") == photoCaption) {
                             "This letter was already sealed with different details."
                         }
                     } else {
@@ -226,7 +239,13 @@ class SparkEnvelopeRepository @Inject constructor(
                             "partnerReaction" to null, "lastOpenRequestId" to null,
                             "createdAt" to FieldValue.serverTimestamp(),
                         ))
-                        transaction.set(content, mapOf("letterText" to draft.letterText.trim(), "songUrl" to draft.songUrl?.takeIf { it.isNotBlank() }))
+                        val body = mutableMapOf<String, Any?>(
+                            "letterText" to draft.letterText.trim(), "songUrl" to draft.songUrl?.takeIf { it.isNotBlank() },
+                        )
+                        if (photo != null) body.putAll(mapOf(
+                            "photoBytes" to photo, "photoMimeType" to photoMimeType, "photoCaption" to photoCaption,
+                        ))
+                        transaction.set(content, body)
                     }
                 }.awaitSpark()
                 return envelopeId
@@ -275,7 +294,16 @@ class SparkEnvelopeRepository @Inject constructor(
                         ))
                         envelope.copy(isOpened = true, openCount = envelope.openCount + 1, lastOpenedAt = System.currentTimeMillis())
                     } else envelope
-                    opened.copy(letterText = content.getString("letterText").orEmpty(), songUrl = content.getString("songUrl"))
+                    // Rules gate this entire content document. Keep image data out of dashboard snapshots.
+                    // A corrupt photo from a custom client must not hide the accompanying letter.
+                    val bytes = (content.data?.get("photoBytes") as? Blob)?.toBytes()
+                    val photoUrl = bytes?.takeIf { it.size <= SparkPhotoPolicy.MAX_BYTES }?.let {
+                        SparkPhotoPolicy.DATA_PREFIX + Base64.getEncoder().encodeToString(it)
+                    }
+                    opened.copy(
+                        letterText = content.getString("letterText").orEmpty(), songUrl = content.getString("songUrl"),
+                        photoUrl = photoUrl, photoCaption = content.getString("photoCaption").takeIf { photoUrl != null },
+                    )
                 }.awaitSpark()
                 pendingOpenRequests.remove(key, requestId)
                 return result
@@ -305,8 +333,14 @@ class SparkEnvelopeRepository @Inject constructor(
         }.awaitSpark()
     }
 
-    override suspend fun uploadMedia(localUri: String, kind: MediaKind): String =
-        error("This edition sends text letters and song links. Photo and voice uploads are unavailable.")
+    override suspend fun uploadMedia(localUri: String, kind: MediaKind): String {
+        require(kind == MediaKind.PHOTO) { "Voice uploads are unavailable in this edition." }
+        val uid = currentUid()
+        // Preparation stays local; sendEnvelope commits the photo with its letter in one transaction.
+        val prepared = photoCodec.prepare(localUri)
+        check(auth.currentUser?.uid == uid) { "Your account changed. Please choose the photo again." }
+        return prepared
+    }
 
     override suspend fun updateMood(mood: String) {
         userReference(currentUid()).update("currentMood", mood.trim().take(60)).awaitSpark()

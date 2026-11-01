@@ -6,7 +6,7 @@ const test = require('node:test');
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
 const {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, writeBatch,
-  runTransaction, serverTimestamp, Timestamp, increment,
+  runTransaction, serverTimestamp, Timestamp, increment, Bytes,
 } = require('firebase/firestore');
 let env;
 const clientUids = new WeakMap();
@@ -17,6 +17,13 @@ const dbFor = uid => {
   return db;
 };
 const envelopePath = (id = 'letter') => `couple_spaces/ours/envelopes/${id}`;
+// A disposable 2 x 2 JPEG; no user photo or metadata is included in test fixtures.
+const jpegBase64 = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAACAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD751bVr611W9ggvbiGGOZ0SOOVlVVDEAAA8ADtRRRWB9Sf/9k=';
+const photoContent = (changes = {}) => ({
+  letterText: 'A little memory for you.', songUrl: null,
+  photoBytes: Bytes.fromBase64String(jpegBase64), photoMimeType: 'image/jpeg', photoCaption: 'Our little memory',
+  ...changes,
+});
 
 async function register(uid) {
   const db = dbFor(uid);
@@ -75,6 +82,10 @@ async function send(db, id = 'letter', options = {}, content = { letterText: 'Yo
     if ((await tx.get(ref)).exists()) {
       const existing = (await tx.get(doc(db, `${envelopePath(id)}/content/letter`))).data();
       assert.equal(existing.letterText, content.letterText, 'A retry must preserve the sealed words.');
+      assert.equal(existing.songUrl ?? null, content.songUrl ?? null, 'A retry must preserve the sealed song.');
+      assert.equal(existing.photoBytes?.toBase64() ?? null, content.photoBytes?.toBase64() ?? null, 'A retry must preserve the sealed photo.');
+      assert.equal(existing.photoMimeType ?? null, content.photoMimeType ?? null, 'A retry must preserve the photo type.');
+      assert.equal(existing.photoCaption ?? null, content.photoCaption ?? null, 'A retry must preserve the photo caption.');
       return id;
     }
     tx.set(ref, metadata(id, options));
@@ -312,4 +323,89 @@ test('partial join cannot leave an invitation reusable or change the owner profi
   await assertFails(setDoc(doc(adam, '_invites/123456'), {
     spaceId: 'ours', ownerUid: 'adam', createdAt: serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + 86400000),
   }));
+});
+
+test('private photo letters are atomic and support captions without breaking old text clients', async () => {
+  const { adam, noor } = await couple();
+  await assertSucceeds(send(adam, 'with-photo', {}, photoContent()));
+  const content = await open(noor, 'with-photo');
+  assert.equal(content.photoBytes.toBase64(), jpegBase64);
+  assert.equal(content.photoMimeType, 'image/jpeg');
+  assert.equal(content.photoCaption, 'Our little memory');
+  await assertSucceeds(send(adam, 'no-caption', {}, photoContent({ photoCaption: null })));
+  await assertSucceeds(send(adam, 'old-text-client'));
+  const boundary = new Uint8Array(245760);
+  boundary.set(Buffer.from(jpegBase64, 'base64'));
+  await assertSucceeds(send(adam, 'byte-boundary', {}, photoContent({ photoBytes: Bytes.fromUint8Array(boundary) })));
+  await assertFails(setDoc(doc(adam, `${envelopePath('orphan-photo')}/content/letter`), photoContent()));
+});
+
+test('photo content rejects partial groups, wrong types, oversized bytes and invalid captions', async () => {
+  const { adam } = await couple();
+  const text = { letterText: 'A little memory.', songUrl: null };
+  const invalid = [
+    { ...text, photoBytes: Bytes.fromBase64String(jpegBase64) },
+    { ...text, photoMimeType: 'image/jpeg' },
+    { ...text, photoCaption: 'A caption without a photo' },
+    { ...text, photoBytes: Bytes.fromBase64String(jpegBase64), photoMimeType: 'image/jpeg' },
+    photoContent({ photoBytes: null }),
+    photoContent({ photoBytes: jpegBase64 }),
+    photoContent({ photoBytes: [255, 216, 255, 217] }),
+    photoContent({ photoBytes: Bytes.fromUint8Array(new Uint8Array()) }),
+    photoContent({ photoBytes: Bytes.fromUint8Array(new Uint8Array(245761)) }),
+    photoContent({ photoMimeType: 'image/png' }),
+    photoContent({ photoMimeType: 1 }),
+    photoContent({ photoCaption: 'x'.repeat(241) }),
+    photoContent({ photoCaption: 17 }),
+    photoContent({ photoUrl: 'https://example.test/photo.jpg' }),
+    photoContent({ letterText: '' }),
+  ];
+  for (const [index, content] of invalid.entries()) {
+    await assertFails(send(adam, `invalid-photo-${index}`, {}, content));
+    assert.equal((await getDoc(doc(adam, envelopePath(`invalid-photo-${index}`)))).exists(), false,
+      'Rejected content must not leave envelope metadata behind.');
+  }
+});
+
+test('photos stay out of metadata and cannot be read or listed by other accounts', async () => {
+  const { adam, noor } = await couple();
+  await send(adam, 'private-photo', {}, photoContent());
+  const metadataOnly = (await getDoc(doc(noor, envelopePath('private-photo')))).data();
+  for (const field of ['photoBytes', 'photoMimeType', 'photoCaption', 'letterText']) assert.equal(metadataOnly[field], undefined);
+  const bodyPath = `${envelopePath('private-photo')}/content/letter`;
+  await assertSucceeds(getDoc(doc(adam, bodyPath)));
+  for (const client of [dbFor('outsider'), env.unauthenticatedContext().firestore()]) {
+    await assertFails(getDoc(doc(client, bodyPath)));
+  }
+  await assertFails(getDocs(collection(noor, `${envelopePath('private-photo')}/content`)));
+  await assertFails(send(adam, 'public-photo', { photoBytes: Bytes.fromBase64String(jpegBase64) }, photoContent()));
+});
+
+test('a photo follows its letter server date lock while its sender can preview it', async () => {
+  const { adam, noor } = await couple();
+  await send(adam, 'future-photo', { unlockRule: 'DATE_LOCKED', unlockTimestamp: Date.now() + 86400000 }, photoContent());
+  await send(adam, 'past-photo', { unlockRule: 'DATE_LOCKED', unlockTimestamp: Date.now() - 1000 }, photoContent());
+  await assertSucceeds(getDoc(doc(noor, envelopePath('future-photo'))));
+  await assertSucceeds(getDoc(doc(adam, `${envelopePath('future-photo')}/content/letter`)));
+  await assertFails(getDoc(doc(noor, `${envelopePath('future-photo')}/content/letter`)));
+  await assertFails(open(noor, 'future-photo'));
+  assert.equal((await open(noor, 'past-photo')).photoBytes.toBase64(), jpegBase64);
+});
+
+test('sealed photo bytes and captions are immutable and retries preserve the exact attachment', async () => {
+  const { adam, noor } = await couple();
+  const content = photoContent();
+  await send(adam, 'same-photo', {}, content);
+  await send(adam, 'same-photo', {}, content);
+  await assert.rejects(send(adam, 'same-photo', {}, photoContent({ photoBytes: Bytes.fromUint8Array(new Uint8Array([255, 216, 255, 217])) })), /preserve the sealed photo/);
+  await assert.rejects(send(adam, 'same-photo', {}, photoContent({ photoCaption: 'A changed caption' })), /preserve the photo caption/);
+  await assert.rejects(send(adam, 'same-photo', {}, { letterText: content.letterText, songUrl: null }), /preserve the sealed photo/);
+  assert.equal((await getDocs(collection(adam, 'couple_spaces/ours/envelopes'))).size, 1);
+  const ref = doc(adam, `${envelopePath('same-photo')}/content/letter`);
+  await assertFails(updateDoc(ref, { photoCaption: 'Edited after sealing' }));
+  await assertFails(setDoc(ref, photoContent({ photoCaption: null })));
+  await assertFails(deleteDoc(ref));
+  await open(noor, 'same-photo');
+  await assertFails(updateDoc(doc(noor, ref.path), { photoBytes: Bytes.fromBase64String(jpegBase64) }));
+  assert.equal((await getDoc(ref)).data().photoCaption, content.photoCaption);
 });

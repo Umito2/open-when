@@ -12,6 +12,7 @@ import com.openwhen.app.domain.repository.EnvelopeRepository
 import com.openwhen.app.media.AudioRecorderHelper
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -46,7 +47,7 @@ class EnvelopeViewModelTest {
         val repository = FakeRepository()
         val vm = viewModel(repository)
         runCurrent()
-        vm.updateDraft { it.copy(letterText = "You are my home.", photoUri = "content://photo") }
+        vm.updateDraft { it.copy(letterText = "You are my home.", photoUri = "content://photo", photoCaption = "Our first trip") }
         repository.failNextSend = true
         vm.sendEnvelope()
         runCurrent()
@@ -60,8 +61,31 @@ class EnvelopeViewModelTest {
         assertEquals(2, repository.sentAttempts.size)
         assertEquals(repository.sentAttempts[0], repository.sentAttempts[1])
         assertEquals("You are my home.", repository.sentAttempts[1].letterText)
+        assertEquals("https://example.test/upload/1", repository.sentAttempts[1].photoUrl)
+        assertEquals("Our first trip", repository.sentAttempts[1].photoCaption)
         assertTrue(vm.create.value.wasSent)
         assertFalse(vm.create.value.isAwaitingConfirmation)
+    }
+
+    @Test fun `switching accounts during photo preparation cancels sending and clears the attachment`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { uploadGate = CompletableDeferred() }
+        val vm = viewModel(repository)
+        runCurrent()
+        vm.updateDraft { it.copy(letterText = "A memory just for you", photoUri = "content://private-photo", photoCaption = "Our trip") }
+        vm.sendEnvelope()
+        runCurrent()
+        assertTrue(vm.create.value.isSaving)
+        assertEquals(1, repository.uploadCount)
+
+        repository.currentUser.value = User(uid = "other-user", partnerId = "other-partner", coupleSpaceId = "another-space")
+        runCurrent()
+        repository.uploadGate!!.complete(Unit)
+        runCurrent()
+
+        assertTrue(repository.sentAttempts.isEmpty())
+        assertEquals(null, vm.create.value.photoUri)
+        assertEquals("", vm.create.value.photoCaption)
+        assertFalse(vm.create.value.isSaving)
     }
 
     @Test fun `switching accounts clears private content before new snapshots arrive`() = runTest(dispatcher) {
@@ -130,6 +154,7 @@ class EnvelopeViewModelTest {
         )))
         var failNextSend = false
         var uploadCount = 0
+        var uploadGate: CompletableDeferred<Unit>? = null
         override fun observeSpace(spaceId: String): Flow<CoupleSpace?> = if (spaceId == "space") {
             flowOf(CoupleSpace(spaceId = "space", user1Id = "me", user2Id = "partner"))
         } else MutableSharedFlow()
@@ -156,6 +181,7 @@ class EnvelopeViewModelTest {
         override suspend fun react(envelopeId: String, reaction: String) = Unit
         override suspend fun uploadMedia(localUri: String, kind: MediaKind): String {
             uploadCount++
+            uploadGate?.await()
             return "https://example.test/upload/$uploadCount"
         }
         override suspend fun updateMood(mood: String) = Unit

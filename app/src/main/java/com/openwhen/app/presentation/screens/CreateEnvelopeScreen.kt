@@ -184,22 +184,29 @@ fun CreateEnvelopeScreen(
                 minLines = 8, enabled = editingEnabled, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
                 supportingText = { Text("${state.letterText.length} / 20,000") })
             Spacer(Modifier.height(24.dp))
-            StudioLabel(if (BuildConfig.SPARK_MODE) words("04  ·  A song to go with your words", "٠٤  ·  أغنية ترافق كلماتك")
+            StudioLabel(if (BuildConfig.SPARK_MODE) words("04  ·  A photo, a memory, a song", "٠٤  ·  صورة وذكرى وأغنية")
                 else words("04  ·  A memory, a voice, a song", "٠٤  ·  ذكرى وصوت وأغنية"))
             Spacer(Modifier.height(12.dp))
             if (BuildConfig.SPARK_MODE) {
                 Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Text(words("Text letters edition · Send your words and an optional song link. Photo and voice uploads are unavailable in this edition.",
-                        "نسخة الرسائل النصية · أرسل كلماتك ورابط أغنية اختياريًا. رفع الصور والرسائل الصوتية غير متاح في هذه النسخة."),
+                    Text(words("Add one photo and a caption. Photos are resized for sharing. Voice notes are not available yet.",
+                        "أضف صورة واحدة وتعليقًا عليها. نُصغّر الصور لتسهيل مشاركتها. الرسائل الصوتية غير متاحة بعد."),
                         modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else {
+                Spacer(Modifier.height(12.dp))
+            }
             if (state.photoUri != null) {
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                     Column(Modifier.padding(12.dp)) {
+                        var previewFailed by remember(state.photoUri) { mutableStateOf(false) }
                         Box {
-                            AsyncImage(state.photoUri, words("Selected memory", "الذكرى المختارة"), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            if (previewFailed) Box(Modifier.fillMaxWidth().height(210.dp).padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text(words("This photo could not be opened. Remove it and choose another memory.",
+                                    "تعذّر فتح هذه الصورة. احذفها واختر صورة أخرى لذكرى جميلة."), textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else AsyncImage(state.photoUri, words("Selected memory", "الذكرى المختارة"),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop, onError = { previewFailed = true },
                                 modifier = Modifier.fillMaxWidth().height(210.dp).clip(RoundedCornerShape(10.dp)))
                             FilledTonalIconButton(onClick = { onUpdate { it.copy(photoUri = null, photoCaption = "") } },
                                 enabled = editingEnabled, modifier = Modifier.align(Alignment.TopEnd).padding(5.dp)) {
@@ -216,6 +223,7 @@ fun CreateEnvelopeScreen(
                 enabled = editingEnabled, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(16.dp)) {
                 Icon(Icons.Rounded.AddPhotoAlternate, null); Spacer(Modifier.width(10.dp)); Text(words("Tuck in a photo memory", "أرفق صورة لذكرى"))
             }
+            if (!BuildConfig.SPARK_MODE) {
             Spacer(Modifier.height(15.dp))
             if (state.voiceNoteUri != null && !recording.isRecording) {
                 VoiceNotePlayerCard(state.voiceNoteUri, state.voiceDurationSec)
