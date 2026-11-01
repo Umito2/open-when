@@ -2,11 +2,14 @@ package com.openwhen.app.di
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.MemoryCacheSettings
 import com.google.firebase.functions.FirebaseFunctions
 import com.google.firebase.storage.FirebaseStorage
 import com.openwhen.app.BuildConfig
 import com.openwhen.app.data.DemoEnvelopeRepository
 import com.openwhen.app.data.FirebaseEnvelopeRepository
+import com.openwhen.app.data.SparkEnvelopeRepository
 import com.openwhen.app.domain.repository.EnvelopeRepository
 import dagger.Lazy
 import dagger.Module
@@ -19,11 +22,25 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object AppModule {
     @Provides @Singleton fun auth(): FirebaseAuth = FirebaseAuth.getInstance()
-    @Provides @Singleton fun firestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
+    @Provides @Singleton fun firestore(): FirebaseFirestore = FirebaseFirestore.getInstance().also {
+        if (BuildConfig.SPARK_MODE) {
+            // Opened letters stay in memory rather than a persistent on-device database.
+            it.firestoreSettings = FirebaseFirestoreSettings.Builder()
+                .setLocalCacheSettings(MemoryCacheSettings.newBuilder().build())
+                .build()
+        }
+    }
     @Provides @Singleton fun storage(): FirebaseStorage = FirebaseStorage.getInstance()
     @Provides @Singleton fun functions(): FirebaseFunctions = FirebaseFunctions.getInstance("us-central1")
 
     @Provides @Singleton
-    fun repository(demo: Lazy<DemoEnvelopeRepository>, firebase: Lazy<FirebaseEnvelopeRepository>): EnvelopeRepository =
-        if (BuildConfig.DEMO_MODE) demo.get() else firebase.get()
+    fun repository(
+        demo: Lazy<DemoEnvelopeRepository>,
+        firebase: Lazy<FirebaseEnvelopeRepository>,
+        spark: Lazy<SparkEnvelopeRepository>,
+    ): EnvelopeRepository = when {
+        BuildConfig.DEMO_MODE -> demo.get()
+        BuildConfig.SPARK_MODE -> spark.get()
+        else -> firebase.get()
+    }
 }

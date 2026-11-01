@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function spacePath(id) { return /databases/$(database)/documents/couple_spaces/$(id); }
+    function invitePath(code) { return /databases/$(database)/documents/_invites/$(code); }
+    function member(id) {
+      let space = get(spacePath(id)).data;
+      return signedIn() && request.auth.uid in [space.user1Id, space.user2Id];
+    }
+    function validUser(data, uid) {
+      return data.keys().hasAll(['uid', 'name', 'partnerId', 'coupleSpaceId', 'fcmToken', 'currentMood'])
+        && data.keys().hasOnly(['uid', 'name', 'partnerId', 'coupleSpaceId', 'fcmToken', 'currentMood'])
+        && data.uid == uid && data.name is string && data.name.size() > 0 && data.name.size() <= 60
+        && data.currentMood is string && data.currentMood.size() <= 60
+        && (data.fcmToken == null || (data.fcmToken is string && data.fcmToken.size() <= 4096));
+    }
+    function validInvite(data, code) {
+      return code.matches('^[0-9]{6}$')
+        && data.keys().hasAll(['spaceId', 'ownerUid', 'createdAt', 'expiresAt'])
+        && data.keys().hasOnly(['spaceId', 'ownerUid', 'createdAt', 'expiresAt'])
+        && data.spaceId is string && data.ownerUid is string
+        && data.createdAt is timestamp && data.expiresAt is timestamp
+        && data.expiresAt > request.time && data.expiresAt <= request.time + duration.value(48, 'h');
+    }
+    function validJoin(id, before, after) {
+      let invite = get(invitePath(before.inviteCode)).data;
+      let joining = get(userPath(request.auth.uid)).data;
+      let owner = get(userPath(before.user1Id)).data;
+      let joined = getAfter(userPath(request.auth.uid)).data;
+      let linkedOwner = getAfter(userPath(before.user1Id)).data;
+      return signedIn() && before.user2Id == null && before.user1Id != request.auth.uid
+        && after.diff(before).affectedKeys().hasOnly(['user2Id']) && after.user2Id == request.auth.uid
+        && invite.spaceId == id && invite.ownerUid == before.user1Id && invite.expiresAt > request.time
+        && joining.partnerId == null && joining.coupleSpaceId == null
+        && owner.partnerId == null && owner.coupleSpaceId == id
+        && joined.partnerId == before.user1Id && joined.coupleSpaceId == id
+        && linkedOwner.partnerId == request.auth.uid && linkedOwner.coupleSpaceId == id
+        && !existsAfter(invitePath(before.inviteCode));
+    }
+    function unlocked(data) {
+      return data.unlockRule == 'ANYTIME'
+        || (data.unlockRule == 'DATE_LOCKED' && data.unlockTimestamp <= request.time.toMillis());
+    }
+
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || resource.data.partnerId == request.auth.uid);
+      allow list, delete: if false;
+      allow create: if signedIn() && request.auth.uid == uid && validUser(request.resource.data, uid)
+        && request.resource.data.partnerId == null && request.resource.data.coupleSpaceId == null;
+      allow update: if signedIn() && validUser(request.resource.data, uid) && (
+        (request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'currentMood', 'fcmToken']))
+        || (request.auth.uid == uid && resource.data.coupleSpaceId == null && resource.data.partnerId == null
+          && request.resource.data.partnerId == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['coupleSpaceId'])
+          && !exists(spacePath(request.resource.data.coupleSpaceId))
+          && getAfter(spacePath(request.resource.data.coupleSpaceId)).data.user1Id == uid
+          && getAfter(spacePath(request.resource.data.coupleSpaceId)).data.user2Id == null)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId', 'coupleSpaceId'])
+          && validJoin(request.resource.data.coupleSpaceId,
+            get(spacePath(request.resource.data.coupleSpaceId)).data,
+            getAfter(spacePath(request.resource.data.coupleSpaceId)).data)
+          && uid in [request.auth.uid, get(spacePath(request.resource.data.coupleSpaceId)).data.user1Id])
+      );
+    }
+
+    match /_invites/{code} {
+      // Exact lookup only. Six-digit codes are single use; Spark has no trusted per-IP rate limiter.
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && validInvite(request.resource.data, code)
+        && request.resource.data.ownerUid == request.auth.uid && request.resource.data.createdAt == request.time
+        && getAfter(spacePath(request.resource.data.spaceId)).data.user1Id == request.auth.uid
+        && getAfter(spacePath(request.resource.data.spaceId)).data.user2Id == null
+        && getAfter(spacePath(request.resource.data.spaceId)).data.inviteCode == code
+        && getAfter(userPath(request.auth.uid)).data.coupleSpaceId == request.resource.data.spaceId;
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid
+        && validInvite(request.resource.data, code)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['expiresAt'])
+        && get(spacePath(resource.data.spaceId)).data.user1Id == request.auth.uid
+        && get(spacePath(resource.data.spaceId)).data.user2Id == null
+        && get(spacePath(resource.data.spaceId)).data.inviteCode == code;
+      allow delete: if signedIn() && validJoin(resource.data.spaceId,
+        get(spacePath(resource.data.spaceId)).data, getAfter(spacePath(resource.data.spaceId)).data);
+    }
+
+    match /couple_spaces/{spaceId} {
+      allow get: if member(spaceId);
+      allow list, delete: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['spaceId', 'inviteCode', 'user1Id', 'user2Id', 'anniversaryDate', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['spaceId', 'inviteCode', 'user1Id', 'user2Id', 'anniversaryDate', 'createdAt'])
+        && request.resource.data.spaceId == spaceId && request.resource.data.user1Id == request.auth.uid
+        && request.resource.data.user2Id == null
+        && request.resource.data.inviteCode is string && request.resource.data.inviteCode.matches('^[0-9]{6}$')
+        && request.resource.data.anniversaryDate is int && request.resource.data.anniversaryDate >= 0
+        && request.resource.data.createdAt == request.time
+        && get(userPath(request.auth.uid)).data.coupleSpaceId == null
+        && get(userPath(request.auth.uid)).data.partnerId == null
+        && getAfter(userPath(request.auth.uid)).data.coupleSpaceId == spaceId
+        && getAfter(invitePath(request.resource.data.inviteCode)).data.spaceId == spaceId
+        && getAfter(invitePath(request.resource.data.inviteCode)).data.ownerUid == request.auth.uid;
+      allow update: if signedIn() && validJoin(spaceId, resource.data, request.resource.data);
+
+      match /envelopes/{envelopeId} {
+        function validMetadata(data) {
+          let space = get(spacePath(spaceId)).data;
+          return data.keys().hasAll(['envelopeId', 'senderId', 'receiverId', 'titlePrompt', 'envelopeColorHex', 'sealIcon',
+              'unlockRule', 'unlockTimestamp', 'isOpened', 'lastOpenedAt', 'openCount', 'partnerReaction', 'createdAt', 'lastOpenRequestId'])
+            && data.keys().hasOnly(['envelopeId', 'senderId', 'receiverId', 'titlePrompt', 'envelopeColorHex', 'sealIcon',
+              'unlockRule', 'unlockTimestamp', 'isOpened', 'lastOpenedAt', 'openCount', 'partnerReaction', 'createdAt', 'lastOpenRequestId'])
+            && data.envelopeId == envelopeId && data.senderId == request.auth.uid
+            && data.receiverId != request.auth.uid && data.receiverId != null
+            && data.senderId in [space.user1Id, space.user2Id] && data.receiverId in [space.user1Id, space.user2Id]
+            && data.titlePrompt is string && data.titlePrompt.size() > 0 && data.titlePrompt.size() <= 120
+            && data.envelopeColorHex is string && data.envelopeColorHex.matches('^#[0-9a-fA-F]{6}$')
+            && data.sealIcon in ['Heart', 'Star', 'Moon', 'Hug', 'Coffee']
+            && ((data.unlockRule == 'ANYTIME' && data.unlockTimestamp == null)
+              || (data.unlockRule == 'DATE_LOCKED' && data.unlockTimestamp is int && data.unlockTimestamp >= 0))
+            && data.isOpened == false && data.lastOpenedAt == null && data.openCount == 0
+            && data.partnerReaction == null && data.lastOpenRequestId == null && data.createdAt == request.time;
+        }
+        allow get, list: if member(spaceId);
+        allow create: if signedIn() && validMetadata(request.resource.data)
+          && existsAfter(/databases/$(database)/documents/couple_spaces/$(spaceId)/envelopes/$(envelopeId)/content/letter);
+        allow update: if member(spaceId) && resource.data.receiverId == request.auth.uid && unlocked(resource.data) && (
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isOpened', 'lastOpenedAt', 'openCount', 'lastOpenRequestId'])
+            && request.resource.data.isOpened == true && request.resource.data.openCount == resource.data.openCount + 1
+            && request.resource.data.lastOpenedAt == request.time
+            && request.resource.data.lastOpenRequestId is string
+            && request.resource.data.lastOpenRequestId.matches('^[0-9a-fA-F-]{36}$')
+            && request.resource.data.lastOpenRequestId != resource.data.lastOpenRequestId)
+          || (resource.data.isOpened == true
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerReaction'])
+            && request.resource.data.partnerReaction is string
+            && request.resource.data.partnerReaction.size() > 0 && request.resource.data.partnerReaction.size() <= 160)
+        );
+        allow delete: if false;
+
+        match /content/{contentId} {
+          function envelopePath() {
+            return /databases/$(database)/documents/couple_spaces/$(spaceId)/envelopes/$(envelopeId);
+          }
+          function validContent(data) {
+            return data.keys().hasAll(['letterText', 'songUrl']) && data.keys().hasOnly(['letterText', 'songUrl'])
+              && data.letterText is string && data.letterText.size() > 0 && data.letterText.size() <= 20000
+              && (data.songUrl == null || (data.songUrl is string && data.songUrl.size() <= 2048
+                && data.songUrl.matches('^https://[^ ]+$')));
+          }
+          allow get: if contentId == 'letter' && member(spaceId)
+            && (!exists(envelopePath()) || get(envelopePath()).data.senderId == request.auth.uid
+              || (get(envelopePath()).data.receiverId == request.auth.uid && unlocked(get(envelopePath()).data)));
+          allow list, update, delete: if false;
+          allow create: if contentId == 'letter' && signedIn() && validContent(request.resource.data)
+            && !exists(envelopePath()) && getAfter(envelopePath()).data.senderId == request.auth.uid;
+        }
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

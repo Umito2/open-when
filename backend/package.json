@@ -8,6 +8,7 @@
     "build": "tsc",
     "test": "npm run build && node --test lib/policy.test.js lib/downloadToken.test.js",
     "test:rules": "firebase emulators:exec --only firestore,storage \"node --test test/rules.test.cjs\" --project demo-open-when",
+    "test:spark": "firebase emulators:exec --config ../firebase.spark.json --only firestore \"node --test test/spark-rules.test.cjs\" --project demo-open-when-spark",
     "test:integration": "npm run build && firebase emulators:exec --only functions,firestore,auth,storage \"node --test test/integration.test.cjs\" --project demo-open-when",
     "serve": "npm run build && firebase emulators:start --only functions,firestore,auth,storage",
     "deploy": "npm run build && firebase deploy --only functions,firestore:rules,storage"

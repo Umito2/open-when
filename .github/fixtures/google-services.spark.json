@@ -1,0 +1,22 @@
+{
+  "project_info": { "project_number": "1234567890", "project_id": "demo-open-when-ci" },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1234567890:android:0000000000000000000000",
+        "android_client_info": { "package_name": "com.openwhen.app" }
+      },
+      "api_key": [{ "current_key": "ci-only-not-a-real-api-key" }],
+      "oauth_client": []
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1234567890:android:1111111111111111111111",
+        "android_client_info": { "package_name": "com.openwhen.app.debug" }
+      },
+      "api_key": [{ "current_key": "ci-only-not-a-real-api-key" }],
+      "oauth_client": []
+    }
+  ],
+  "configuration_version": "1"
+}

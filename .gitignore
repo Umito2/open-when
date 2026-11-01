@@ -5,6 +5,8 @@
 local.properties
 app/google-services.json
 app/src/live/google-services.json
+app/src/spark/google-services.json
+signing.properties
 *.jks
 *.keystore
 .idea/

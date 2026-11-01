@@ -29,6 +29,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.openwhen.app.BuildConfig
 import com.openwhen.app.domain.model.CoupleSpace
 import com.openwhen.app.domain.model.User
 import com.openwhen.app.presentation.components.Eyebrow
@@ -113,11 +114,15 @@ fun PairingScreen(
             TextButton(onClick = { emailMode = !emailMode }, enabled = !busy) {
                 Text(if (emailMode) words("Continue as a guest", "المتابعة كضيف") else words("Continue with email", "المتابعة بالبريد الإلكتروني"))
             }
-            OutlinedButton(onClick = onGoogle, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                Text(words("Continue with Google", "المتابعة باستخدام Google"))
+            if (!BuildConfig.SPARK_MODE) {
+                OutlinedButton(onClick = onGoogle, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Text(words("Continue with Google", "المتابعة باستخدام Google"))
+                }
             }
             Spacer(Modifier.height(14.dp))
-            Text(words("Guest accounts stay on this device. Use email or Google to keep access when changing phones.",
+            Text(if (BuildConfig.SPARK_MODE) words("Guest accounts stay on this device. Choose email to keep access when changing phones.",
+                "يبقى حساب الضيف على هذا الجهاز. اختر البريد الإلكتروني للاحتفاظ بحسابك عند تغيير هاتفك.")
+                else words("Guest accounts stay on this device. Use email or Google to keep access when changing phones.",
                 "يبقى حساب الضيف على هذا الجهاز. استخدم البريد أو Google للاحتفاظ بحسابك عند تغيير هاتفك."),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center)
@@ -157,6 +162,10 @@ fun PairingScreen(
                     modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) {
                     Text(words("Join their space", "انضم إلى مساحتهما"))
                 }
+            } else if (space.user2Id != null) {
+                Text(words("Your shared space is connected. Your letters are waiting for you.",
+                    "مساحتكما المشتركة متصلة. رسائلكما في انتظاركما."),
+                    textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -175,6 +184,16 @@ fun PairingScreen(
                                 type = "text/plain"; putExtra(Intent.EXTRA_TEXT, shareText)
                             }, null))
                         }) { Icon(Icons.Rounded.Share, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(words("Share our code", "شارك رمزنا")) }
+                        if (BuildConfig.SPARK_MODE) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(words("Your code expires after 24 hours. Share it only with your partner.",
+                                "تنتهي صلاحية الرمز بعد ٢٤ ساعة. شاركه مع شريكك فقط."),
+                                style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            TextButton(onClick = { onCreateSpace(space.anniversaryDate) }, enabled = !busy) {
+                                Text(words("Refresh invitation for 24 hours", "جدّد الدعوة لمدة ٢٤ ساعة"))
+                            }
+                        }
                     }
                 }
             }

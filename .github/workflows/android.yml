@@ -21,7 +21,12 @@ jobs:
           packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Use an inert Firebase configuration for Spark compilation
+        run: |
+          mkdir -p app/src/spark
+          cp .github/fixtures/google-services.spark.json app/src/spark/google-services.json
       - run: sh ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug :app:assembleDemoDebug
+      - run: sh ./gradlew :app:testSparkDebugUnitTest :app:lintSparkDebug :app:assembleSparkRelease
       - uses: actions/upload-artifact@v4
         with:
           name: open-when-demo
@@ -42,6 +47,8 @@ jobs:
       - run: npm test
         working-directory: backend
       - run: npm run test:rules
+        working-directory: backend
+      - run: npm run test:spark
         working-directory: backend
       - run: npm run test:integration
         working-directory: backend

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,8 +8,9 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
-val firebaseConfigured = file("google-services.json").exists() || file("src/live/google-services.json").exists()
-if (firebaseConfigured) apply(plugin = "com.google.gms.google-services")
+val liveFirebaseConfigured = file("google-services.json").exists() || file("src/live/google-services.json").exists()
+val sparkFirebaseConfigured = file("src/spark/google-services.json").exists()
+if (liveFirebaseConfigured || sparkFirebaseConfigured) apply(plugin = "com.google.gms.google-services")
 tasks.configureEach {
     if (name.startsWith("processDemo") && name.endsWith("GoogleServices")) enabled = false
 }
@@ -21,8 +24,8 @@ android {
         applicationId = "com.openwhen.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -34,17 +37,36 @@ android {
             applicationIdSuffix = ".demo"
             versionNameSuffix = "-demo"
             buildConfigField("boolean", "DEMO_MODE", "true")
+            buildConfigField("boolean", "SPARK_MODE", "false")
             resValue("string", "app_name", "Open When… Demo")
         }
         create("live") {
             dimension = "backend"
             buildConfigField("boolean", "DEMO_MODE", "false")
+            buildConfigField("boolean", "SPARK_MODE", "false")
             resValue("string", "app_name", "Open When…")
+        }
+        create("spark") {
+            dimension = "backend"
+            buildConfigField("boolean", "DEMO_MODE", "false")
+            buildConfigField("boolean", "SPARK_MODE", "true")
+            resValue("string", "app_name", "Open When…")
+        }
+    }
+    val signingFile = rootProject.file("signing.properties")
+    if (signingFile.exists()) {
+        val signingProperties = Properties().apply { signingFile.inputStream().use { load(it) } }
+        signingConfigs.create("privateRelease") {
+            storeFile = rootProject.file(signingProperties.getProperty("storeFile"))
+            storePassword = signingProperties.getProperty("storePassword")
+            keyAlias = signingProperties.getProperty("keyAlias")
+            keyPassword = signingProperties.getProperty("keyPassword")
         }
     }
     buildTypes {
         debug { applicationIdSuffix = ".debug" }
         release {
+            signingConfigs.findByName("privateRelease")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -68,8 +90,16 @@ kapt { correctErrorTypes = true }
 
 tasks.matching { it.name.startsWith("preLive") && it.name.endsWith("Build") }.configureEach {
     doFirst {
-        check(firebaseConfigured) {
+        check(liveFirebaseConfigured) {
             "Live builds require app/src/live/google-services.json. Use :app:assembleDemoDebug for the offline demo."
+        }
+    }
+}
+
+tasks.matching { it.name.startsWith("preSpark") && it.name.endsWith("Build") }.configureEach {
+    doFirst {
+        check(sparkFirebaseConfigured) {
+            "Spark builds require app/src/spark/google-services.json from your Firebase Spark project."
         }
     }
 }

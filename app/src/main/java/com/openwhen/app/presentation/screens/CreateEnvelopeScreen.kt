@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.openwhen.app.BuildConfig
 import com.openwhen.app.domain.model.UnlockRule
 import com.openwhen.app.media.RecordingState
 import com.openwhen.app.presentation.components.*
@@ -183,8 +184,17 @@ fun CreateEnvelopeScreen(
                 minLines = 8, enabled = editingEnabled, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
                 supportingText = { Text("${state.letterText.length} / 20,000") })
             Spacer(Modifier.height(24.dp))
-            StudioLabel(words("04  ·  A memory, a voice, a song", "٠٤  ·  ذكرى وصوت وأغنية"))
+            StudioLabel(if (BuildConfig.SPARK_MODE) words("04  ·  A song to go with your words", "٠٤  ·  أغنية ترافق كلماتك")
+                else words("04  ·  A memory, a voice, a song", "٠٤  ·  ذكرى وصوت وأغنية"))
             Spacer(Modifier.height(12.dp))
+            if (BuildConfig.SPARK_MODE) {
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Text(words("Text letters edition · Send your words and an optional song link. Photo and voice uploads are unavailable in this edition.",
+                        "نسخة الرسائل النصية · أرسل كلماتك ورابط أغنية اختياريًا. رفع الصور والرسائل الصوتية غير متاح في هذه النسخة."),
+                        modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
             if (state.photoUri != null) {
                 Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                     Column(Modifier.padding(12.dp)) {
@@ -256,6 +266,7 @@ fun CreateEnvelopeScreen(
             (recording.error ?: permissionError)?.let {
                 Spacer(Modifier.height(8.dp)); Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
+            }
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(state.songUrl, { value -> onUpdate { it.copy(songUrl = value.take(2_000)) } },
                 label = { Text(words("A song for them · optional", "أغنية لهم · اختياري")) },
@@ -268,7 +279,7 @@ fun CreateEnvelopeScreen(
             val rules = listOf(UnlockRule.ANYTIME to words("Whenever they need it", "حين يحتاجونها"),
                 UnlockRule.DATE_LOCKED to words("On a special date", "في موعد خاص"),
                 UnlockRule.ONE_TIME_ONLY to words("A once-only moment", "لحظة لمرة واحدة"))
-            rules.forEach { (rule, label) ->
+            rules.filter { !BuildConfig.SPARK_MODE || it.first != UnlockRule.ONE_TIME_ONLY }.forEach { (rule, label) ->
                 Surface(onClick = { onUpdate { it.copy(unlockRule = rule) } }, enabled = editingEnabled,
                     color = if (state.unlockRule == rule) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f) else MaterialTheme.colorScheme.background,
                     shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
