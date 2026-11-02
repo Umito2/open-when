@@ -13,12 +13,13 @@ import com.openwhen.app.domain.model.Envelope
 import com.openwhen.app.presentation.components.WaxSealEnvelopeCard
 import com.openwhen.app.presentation.theme.OpenWhenTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
-/** These tests exercise real pointer cancellation and the complete seal/flap sequence. */
+/** These tests exercise pointer cancellation and the seal handoff to the larger reveal. */
 class WaxSealEnvelopeCardTest {
     @get:Rule val compose = createComposeRule()
 
@@ -41,6 +42,14 @@ class WaxSealEnvelopeCardTest {
         compose.mainClock.autoAdvance = false
     }
 
+    private fun awaitOpening(calls: AtomicInteger) {
+        // The deliberate hold uses a real delay; the wax handoff also needs animation frames.
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.mainClock.advanceTimeBy(32)
+            calls.get() == 1
+        }
+    }
+
     @Test fun releasingBeforeOneAndHalfSecondsKeepsTheLetterSealed() {
         val calls = AtomicInteger()
         show(calls)
@@ -52,16 +61,15 @@ class WaxSealEnvelopeCardTest {
         compose.runOnIdle { assertEquals(0, calls.get()) }
     }
 
-    @Test fun fullHoldAndFlapAnimationOpenTheLetterExactlyOnce() {
+    @Test fun fullHoldAndSealHandoffOpenTheLetterExactlyOnce() {
         val calls = AtomicInteger()
         show(calls)
         val seal = compose.onNodeWithTag("wax-seal-test-letter", useUnmergedTree = true)
         seal.performTouchInput { down(center) }
-        compose.mainClock.advanceTimeBy(1_400)
         compose.runOnIdle { assertEquals(0, calls.get()) }
-        compose.mainClock.advanceTimeBy(750)
+        awaitOpening(calls)
         compose.runOnIdle { assertEquals(1, calls.get()) }
-        seal.performTouchInput { advanceEventTime(2_150); up() }
+        seal.performTouchInput { up() }
         compose.mainClock.advanceTimeBy(2_500)
         compose.runOnIdle { assertEquals(1, calls.get()) }
     }
@@ -74,8 +82,23 @@ class WaxSealEnvelopeCardTest {
         compose.runOnIdle {
             assertEquals(1, actions.size)
             assertTrue(actions.single().action())
+            assertEquals(0, calls.get())
         }
-        compose.mainClock.advanceTimeBy(2_200)
+        awaitOpening(calls)
+        compose.runOnIdle { assertEquals(1, calls.get()) }
+    }
+
+    @Test fun repeatedAccessibilityActionCannotStartASecondOpeningWhileTheFirstIsPending() {
+        val calls = AtomicInteger()
+        show(calls)
+        val action = compose.onNodeWithContentDescription(envelope.titlePrompt)
+            .fetchSemanticsNode().config[SemanticsActions.CustomActions].single()
+        compose.runOnIdle {
+            assertTrue(action.action())
+            assertFalse(action.action())
+            assertEquals(0, calls.get())
+        }
+        awaitOpening(calls)
         compose.runOnIdle { assertEquals(1, calls.get()) }
     }
 }

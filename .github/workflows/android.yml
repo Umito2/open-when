@@ -25,7 +25,7 @@ jobs:
         run: |
           mkdir -p app/src/spark
           cp .github/fixtures/google-services.spark.json app/src/spark/google-services.json
-      - run: sh ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug :app:assembleDemoDebug
+      - run: sh ./gradlew :app:testDemoDebugUnitTest :app:lintDemoDebug :app:assembleDemoDebug :app:assembleDemoDebugAndroidTest
       - run: sh ./gradlew :app:testSparkDebugUnitTest :app:lintSparkDebug
       - run: sh ./gradlew :app:assembleSparkRelease
       - uses: actions/upload-artifact@v4

@@ -28,6 +28,9 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -113,6 +116,7 @@ class EnvelopeViewModelTest {
         vm.openEnvelope("private")
         runCurrent()
         val original = requireNotNull(vm.opened.value.envelope)
+        val opening = requireNotNull(vm.opened.value.opening)
 
         repository.envelopeSnapshots.value = listOf(original.copy(
             isOpened = true,
@@ -134,6 +138,49 @@ class EnvelopeViewModelTest {
         assertEquals(original.voiceDurationSec, refreshed.voiceDurationSec)
         assertEquals(original.songUrl, refreshed.songUrl)
         assertEquals("", vm.dashboard.value.envelopes.single().letterText)
+        assertEquals(opening, vm.opened.value.opening)
+        assertEquals(1, repository.openCalls)
+    }
+
+    @Test fun `opening keeps one visual request through loading and result then uses a new request after dismissal`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { openGate = CompletableDeferred() }
+        val vm = viewModel(repository)
+        runCurrent()
+        vm.openEnvelope("private")
+        runCurrent()
+        val opening = requireNotNull(vm.opened.value.opening)
+        assertTrue(vm.opened.value.isLoading)
+        assertEquals("private", opening.envelopeId)
+        assertNull(vm.opened.value.envelope)
+        repository.openGate!!.complete(Unit)
+        runCurrent()
+        assertEquals(opening, vm.opened.value.opening)
+        assertNotNull(vm.opened.value.envelope)
+        vm.dismissLetter()
+        assertNull(vm.opened.value.opening)
+        repository.openFails = true
+        vm.openEnvelope("private")
+        runCurrent()
+        assertNotEquals(opening.requestId, vm.opened.value.opening?.requestId)
+        assertNotNull(vm.opened.value.error)
+        assertNull(vm.opened.value.envelope)
+        assertFalse(vm.opened.value.isLoading)
+    }
+
+    @Test fun `account changes cancel an unfolding letter and ignore its late result`() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { openGate = CompletableDeferred() }
+        val vm = viewModel(repository)
+        runCurrent()
+        vm.openEnvelope("private")
+        runCurrent()
+        assertNotNull(vm.opened.value.opening)
+        repository.currentUser.value = User(uid = "other-user", coupleSpaceId = "other-space")
+        runCurrent()
+        repository.openGate!!.complete(Unit)
+        runCurrent()
+        assertNull(vm.opened.value.opening)
+        assertNull(vm.opened.value.envelope)
+        assertFalse(vm.opened.value.isLoading)
     }
 
     private fun viewModel(repository: EnvelopeRepository): EnvelopeViewModel {
@@ -155,6 +202,9 @@ class EnvelopeViewModelTest {
         var failNextSend = false
         var uploadCount = 0
         var uploadGate: CompletableDeferred<Unit>? = null
+        var openGate: CompletableDeferred<Unit>? = null
+        var openFails = false
+        var openCalls = 0
         override fun observeSpace(spaceId: String): Flow<CoupleSpace?> = if (spaceId == "space") {
             flowOf(CoupleSpace(spaceId = "space", user1Id = "me", user2Id = "partner"))
         } else MutableSharedFlow()
@@ -177,7 +227,12 @@ class EnvelopeViewModelTest {
             }
             return "sealed"
         }
-        override suspend fun openEnvelope(envelopeId: String) = envelopeSnapshots.value.first { it.envelopeId == envelopeId }
+        override suspend fun openEnvelope(envelopeId: String): Envelope {
+            openCalls++
+            openGate?.await()
+            if (openFails) throw IOException("Please try again")
+            return envelopeSnapshots.value.first { it.envelopeId == envelopeId }
+        }
         override suspend fun react(envelopeId: String, reaction: String) = Unit
         override suspend fun uploadMedia(localUri: String, kind: MediaKind): String {
             uploadCount++

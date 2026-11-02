@@ -4,6 +4,10 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +22,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -27,6 +32,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -35,6 +41,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
@@ -61,15 +68,7 @@ fun LetterRevealScreen(
                 navigationIcon = { IconButton(onClick = onBack, enabled = !state.isLoading) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, words("Back", "رجوع")) } },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background))
         }) { padding ->
-        if (state.isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(18.dp))
-                    Text(words("Unfolding something just for you…", "نكشف شيئاً كُتب لك وحدك…"), fontFamily = FontFamily.Serif, fontSize = 20.sp)
-                }
-            }
-        } else if (envelope == null) {
+        if (!state.isLoading && envelope == null) {
             Column(Modifier.fillMaxSize().padding(padding).padding(28.dp), verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(state.error ?: words("This letter is resting for now.", "هذه الرسالة تستريح الآن."), color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
@@ -77,7 +76,8 @@ fun LetterRevealScreen(
                 Button(onClick = onBack) { Text(words("Back to our letters", "العودة إلى رسائلنا")) }
             }
         } else {
-            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())
+            LetterOpeningReveal(state, Modifier.fillMaxSize().padding(padding)) {
+            if (envelope != null) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(horizontal = 22.dp, vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Eyebrow(words("WRITTEN WITH YOU IN MIND", "كُتبت وأنت في البال"))
                 Spacer(Modifier.height(12.dp))
@@ -136,6 +136,69 @@ fun LetterRevealScreen(
                 Text("♥", color = MaterialTheme.colorScheme.primary.copy(alpha = .5f), fontSize = 20.sp)
                 Spacer(Modifier.height(16.dp))
             }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LetterOpeningReveal(state: OpenEnvelopeState, modifier: Modifier, content: @Composable () -> Unit) {
+    val key = state.opening?.requestId ?: state.envelope?.envelopeId ?: "opening"
+    var completedRequestId by rememberSaveable { mutableStateOf<String?>(null) }
+    val unfolded = completedRequestId == key
+    val progress = remember(key) { Animatable(if (unfolded) 1f else 0f) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(key, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            if (completedRequestId != key) {
+                val remainingMs = ((1f - progress.value) * 1_800).toInt().coerceAtLeast(1)
+                progress.animateTo(1f, tween(remainingMs, easing = LinearEasing))
+                completedRequestId = key
+            }
+        }
+    }
+    val ready = unfolded && !state.isLoading && state.envelope != null
+    val revealed = remember(key) { MutableTransitionState(ready) }
+    LaunchedEffect(ready) { revealed.targetState = ready }
+    Box(modifier) {
+        AnimatedVisibility(
+            visible = !ready,
+            exit = fadeOut(tween(260)),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 24.dp).testTag("letter-opening-scene"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                EnvelopeOpeningScene(
+                    envelopeColorHex = state.opening?.envelopeColorHex ?: state.envelope?.envelopeColorHex ?: "#EBC4C4",
+                    sealIcon = state.opening?.sealIcon ?: state.envelope?.sealIcon ?: "Heart",
+                    progress = progress.value,
+                    waiting = unfolded && state.isLoading,
+                    modifier = Modifier.widthIn(max = 380.dp).fillMaxWidth().weight(1f, fill = false).heightIn(max = 360.dp),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    if (unfolded && state.isLoading) words("A little love is on its way…", "قليل من الحب في طريقه إليك…")
+                    else words("Unfolding something just for you…", "نكشف شيئاً كُتب لك وحدك…"),
+                    fontFamily = FontFamily.Serif, fontSize = 22.sp, lineHeight = 29.sp,
+                    textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(10.dp))
+                state.opening?.titlePrompt?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3)
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+        AnimatedVisibility(
+            visibleState = revealed,
+            enter = fadeIn(tween(420)) + slideInVertically(tween(520, easing = FastOutSlowInEasing)) { it / 16 },
+        ) {
+            // Do not compose selectable text, photos or reactions before the presentation gate.
+            if (ready) content()
         }
     }
 }

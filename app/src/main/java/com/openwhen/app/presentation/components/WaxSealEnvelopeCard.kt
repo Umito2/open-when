@@ -35,6 +35,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
@@ -60,7 +62,7 @@ fun WaxSealEnvelopeCard(
     val consumed = !isSender && envelope.unlockRule == UnlockRule.ONE_TIME_ONLY && envelope.isOpened
     val enabled = !locked && !consumed
     val hold = remember(envelope.envelopeId) { Animatable(0f) }
-    val flap = remember(envelope.envelopeId) { Animatable(0f) }
+    val sealBreak = remember(envelope.envelopeId) { Animatable(0f) }
     var opening by remember(envelope.envelopeId) { mutableStateOf(false) }
     var holdConfirmed by remember(envelope.envelopeId) { mutableStateOf(false) }
     var openingJob by remember(envelope.envelopeId) { mutableStateOf<Job?>(null) }
@@ -68,6 +70,7 @@ fun WaxSealEnvelopeCard(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val currentLifecycle by rememberUpdatedState(lifecycleOwner.lifecycle)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) openingJob?.cancel()
@@ -93,12 +96,14 @@ fun WaxSealEnvelopeCard(
                 }
                 holdConfirmed = true
                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                flap.animateTo(1f, tween(450))
-                currentOpen()
+                // The larger reveal owns the flap and paper animation after this wax handoff.
+                sealBreak.animateTo(1f, tween(180))
+                currentCoroutineContext().ensureActive()
+                if (currentLifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) currentOpen()
                 delay(250)
             } finally {
                 withContext(NonCancellable) {
-                    flap.snapTo(0f)
+                    sealBreak.snapTo(0f)
                     hold.snapTo(0f)
                     holdConfirmed = false
                     opening = false
@@ -117,7 +122,7 @@ fun WaxSealEnvelopeCard(
         contentDescription = envelope.titlePrompt
         stateDescription = stateLabel
         if (enabled) customActions = listOf(CustomAccessibilityAction(actionLabel) {
-            if (opening) false else {
+            if (opening || openingJob?.isActive == true) false else {
                 openingJob = scope.launch { openLetter() }
                 true
             }
@@ -137,11 +142,7 @@ fun WaxSealEnvelopeCard(
                 drawLine(fold.copy(alpha = .35f), Offset(0f, size.height), Offset(size.width / 2, size.height * .42f), 1.dp.toPx())
                 drawLine(fold.copy(alpha = .35f), Offset(size.width, size.height), Offset(size.width / 2, size.height * .42f), 1.dp.toPx())
             }
-            Canvas(Modifier.fillMaxWidth().height(92.dp).graphicsLayer {
-                rotationX = flap.value * -170f
-                transformOrigin = TransformOrigin(.5f, 0f)
-                cameraDistance = 12 * density
-            }) {
+            Canvas(Modifier.fillMaxWidth().height(92.dp)) {
                 val triangle = Path().apply { moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2, size.height); close() }
                 drawPath(triangle, color)
                 drawLine(Color.Black.copy(alpha = .075f), Offset(0f, 0f), Offset(size.width / 2, size.height), 1.dp.toPx())
@@ -149,13 +150,18 @@ fun WaxSealEnvelopeCard(
             }
             Text("✧", Modifier.align(Alignment.TopEnd).padding(12.dp), color = Color.Black.copy(alpha = .3f), fontSize = 23.sp)
             Box(Modifier.align(Alignment.Center).offset(y = 12.dp).size(62.dp).testTag("wax-seal-${envelope.envelopeId}")
-                .graphicsLayer { alpha = 1f - flap.value; scaleX = 1f - flap.value * .3f; scaleY = scaleX }
+                .graphicsLayer {
+                    alpha = 1f - sealBreak.value
+                    scaleX = (1f - hold.value * .055f) * (1f - sealBreak.value * .18f)
+                    scaleY = scaleX
+                    rotationZ = sin(hold.value * PI * 4).toFloat() * hold.value * 1.4f - sealBreak.value * 9f
+                }
                 .pointerInput(envelope.envelopeId, enabled, isSender) {
                     if (enabled) {
                         if (isSender) detectTapGestures(onTap = {
-                            if (!opening) openingJob = scope.launch { openLetter() }
+                            if (!opening && openingJob?.isActive != true) openingJob = scope.launch { openLetter() }
                         }) else detectTapGestures(onPress = {
-                            if (opening) return@detectTapGestures
+                            if (opening || openingJob?.isActive == true) return@detectTapGestures
                             kotlinx.coroutines.coroutineScope {
                                 val job = launch { openLetter() }
                                 openingJob = job
@@ -179,6 +185,17 @@ fun WaxSealEnvelopeCard(
                     drawPath(seal, sealColor)
                     drawCircle(Color.White.copy(alpha = .2f), radius * .72f,
                         style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                    if (sealBreak.value > 0f) {
+                        val crack = Path().apply {
+                            moveTo(center.x - radius * .1f, center.y - radius)
+                            lineTo(center.x + radius * .12f, center.y - radius * .46f)
+                            lineTo(center.x - radius * .1f, center.y - radius * .1f)
+                            lineTo(center.x + radius * .14f, center.y + radius * .3f)
+                            lineTo(center.x - radius * .05f, center.y + radius)
+                        }
+                        drawPath(crack, color.copy(alpha = sealBreak.value),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke((1f + sealBreak.value).dp.toPx()))
+                    }
                 }
                 if (locked) Icon(Icons.Rounded.Lock, null, tint = Color(0xFFFFE8D7), modifier = Modifier.size(21.dp))
                 else Text(if (consumed) "✓" else sealGlyph(envelope.sealIcon), color = Color(0xFFFFE8D7), fontSize = 24.sp)

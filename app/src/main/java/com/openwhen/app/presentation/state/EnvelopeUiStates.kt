@@ -52,6 +52,16 @@ data class OpenEnvelopeState(
     val isLoading: Boolean = false,
     val isReacting: Boolean = false,
     val error: String? = null,
+    val opening: EnvelopeOpeningDetails? = null,
+)
+
+/** Visual metadata only; the opening scene never receives sealed letter content. */
+data class EnvelopeOpeningDetails(
+    val requestId: String,
+    val envelopeId: String,
+    val titlePrompt: String,
+    val envelopeColorHex: String,
+    val sealIcon: String,
 )
 
 data class PairingUiState(val isBusy: Boolean = false, val error: String? = null)

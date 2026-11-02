@@ -11,6 +11,7 @@ import com.openwhen.app.media.AudioRecorderHelper
 import com.openwhen.app.presentation.state.CreateEnvelopeState
 import com.openwhen.app.presentation.state.DashboardUiState
 import com.openwhen.app.presentation.state.OpenEnvelopeState
+import com.openwhen.app.presentation.state.EnvelopeOpeningDetails
 import com.openwhen.app.presentation.state.PairingUiState
 import com.openwhen.app.presentation.state.PartnerActivityTracker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -199,19 +200,32 @@ class EnvelopeViewModel @Inject constructor(
         }
     }
 
-    /** Called only after the seal gesture and flap animation have completed. */
+    /** The confirmed seal starts one fetch; the unfold animation only controls presentation. */
     fun openEnvelope(envelopeId: String) {
         if (mutableOpened.value.isLoading) return
         openJob?.cancel()
-        mutableOpened.value = OpenEnvelopeState(isLoading = true)
+        val metadata = mutableDashboard.value.envelopes.firstOrNull { it.envelopeId == envelopeId }
+        val opening = EnvelopeOpeningDetails(
+            requestId = UUID.randomUUID().toString(), envelopeId = envelopeId,
+            titlePrompt = metadata?.titlePrompt.orEmpty(),
+            envelopeColorHex = metadata?.envelopeColorHex ?: "#EBC4C4",
+            sealIcon = metadata?.sealIcon ?: "Heart",
+        )
+        mutableOpened.value = OpenEnvelopeState(isLoading = true, opening = opening)
         openJob = viewModelScope.launch {
             try {
                 val envelope = repository.openEnvelope(envelopeId)
-                mutableOpened.value = OpenEnvelopeState(envelope = envelope)
+                mutableOpened.update { current ->
+                    if (current.opening?.requestId == opening.requestId) OpenEnvelopeState(envelope = envelope, opening = opening)
+                    else current
+                }
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
-                mutableOpened.value = OpenEnvelopeState(error = failure.userMessage())
+                mutableOpened.update { current ->
+                    if (current.opening?.requestId == opening.requestId) OpenEnvelopeState(error = failure.userMessage(), opening = opening)
+                    else current
+                }
                 mutableAlerts.emit(failure.userMessage())
             }
         }
